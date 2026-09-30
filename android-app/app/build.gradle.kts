@@ -16,11 +16,11 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
-        // Backend base URL — overridden per build type below.
-        // 192.168.31.174 = dev machine's LAN IP (works for a real phone on the
-        // same WiFi; also reachable from the emulator). If this IP changes
-        // (different network, DHCP renew), update it and rebuild.
-        buildConfigField("String", "API_BASE_URL", "\"http://192.168.31.174:4000/\"")
+        // Backend base URL — the deployed Render backend, reachable from any
+        // network (mobile data, any WiFi) since it's a real public HTTPS host.
+        // No per-build-type override needed anymore — same URL for debug and
+        // release now that there's a real deployment instead of a dev-machine IP.
+        buildConfigField("String", "API_BASE_URL", "\"https://spapp-monitoring-backend.onrender.com/\"")
     }
 
     buildTypes {
@@ -30,7 +30,6 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            buildConfigField("String", "API_BASE_URL", "\"https://api.spappmonitoring.internal/\"")
         }
     }
 
