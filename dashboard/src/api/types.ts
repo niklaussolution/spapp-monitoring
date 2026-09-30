@@ -1,0 +1,111 @@
+export interface User {
+  id: string;
+  email: string;
+  fullName?: string;
+  role: string;
+  tenantId: string;
+  tenantName: string;
+}
+
+export interface Device {
+  id: string;
+  device_label: string;
+  status: "pending" | "active" | "revoked";
+  platform: string;
+  os_version: string | null;
+  app_version: string | null;
+  consent_given_at: string | null;
+  last_seen_at: string | null;
+  created_at: string;
+  device_token?: string;
+  featureFlags?: FeatureFlags;
+}
+
+export interface FeatureFlags {
+  device_id: string;
+  location_on_demand: boolean;
+  geofencing: boolean;
+  app_usage_tracking: boolean;
+  web_history_tracking: boolean;
+  app_blocking: boolean;
+  sms_log: boolean;
+  call_log: boolean;
+  remote_lock: boolean;
+  file_manager: boolean;
+  installed_apps_list: boolean;
+  updated_at: string;
+}
+
+export interface AppUsageEntry {
+  package_name: string;
+  app_name: string | null;
+  usage_seconds: number;
+  usage_date: string;
+}
+
+export interface SmsLogEntry {
+  direction: string;
+  counterparty: string;
+  message_at: string;
+}
+
+export interface CallLogEntry {
+  direction: string;
+  counterparty: string;
+  duration_sec: number;
+  called_at: string;
+}
+
+export interface InstalledApp {
+  package_name: string;
+  app_name: string | null;
+  install_date: string | null;
+  synced_at: string;
+}
+
+export interface RemoteCommand {
+  id: string;
+  command_type: string;
+  status: "pending" | "sent" | "acked" | "failed";
+  result?: Record<string, unknown>;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface LocationPoint {
+  latitude: number;
+  longitude: number;
+  accuracy_m: number | null;
+  source: string;
+  recorded_at: string;
+}
+
+export interface Geofence {
+  id: string;
+  device_id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  radius_m: number;
+  active: boolean;
+  created_at: string;
+}
+
+export interface Alert {
+  id: number;
+  alert_type: string;
+  message: string;
+  metadata: Record<string, unknown>;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface BlockRule {
+  id: string;
+  device_id: string;
+  rule_type: "app" | "website";
+  target: string;
+  schedule: { days?: string[]; start?: string; end?: string } | null;
+  active: boolean;
+  created_at: string;
+}

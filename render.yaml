@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: spapp-monitoring-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run migrate && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: spapp-monitoring-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: DASHBOARD_ORIGIN
+        value: "*" # tighten to your deployed dashboard URL once you have it
+      # Set this manually in the Render dashboard (Environment tab) — paste
+      # the full contents of your Firebase service account JSON as the value.
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+
+databases:
+  - name: spapp-monitoring-db
+    plan: free
+    databaseName: spapp_monitoring
+    user: spapp_admin

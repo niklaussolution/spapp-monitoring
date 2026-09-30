@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG BUILDS ONLY (src/debug, not src/main). Allows plain HTTP to the local
+  dev backend running on the host machine — 10.0.2.2 for the emulator,
+  192.168.31.174 for a real phone on the same WiFi (update this if the dev
+  machine's LAN IP changes). The release build type has no such override, so
+  production builds keep Android's default cleartext-blocked behavior.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">192.168.31.174</domain>
+    </domain-config>
+</network-security-config>

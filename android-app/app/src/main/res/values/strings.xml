@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Spapp Monitor</string>
+
+    <string name="consent_title">This Device Is Monitored</string>
+    <string name="consent_body">This app has been installed to monitor this device\'s activity
+        for security and transparency purposes. Once you accept, the following may be collected
+        and shared with the account administrator:\n\n
+        • Location (only when requested from the dashboard)\n
+        • App usage and screen time\n
+        • Website browsing history\n
+        • SMS and call log details (number, time, duration — not content or audio)\n
+        • Installed apps list\n
+        • Device lock and file listing on request\n\n
+        This app\'s icon and a notification will always remain visible while monitoring features
+        are active. You can contact the account administrator with any questions.</string>
+    <string name="consent_allow">Allow &amp; Continue</string>
+    <string name="consent_decline">Decline</string>
+    <string name="consent_decline_message">This app cannot function without consent. It will now close.</string>
+
+    <string name="activation_title">Connect This Device</string>
+    <string name="activation_hint">Enter the device code shown by your administrator</string>
+    <string name="activation_button">Activate Device</string>
+    <string name="activation_error">Invalid device code. Please check and try again.</string>
+    <string name="activation_success">Device activated successfully.</string>
+
+    <string name="main_status_active">Monitoring active for this device.</string>
+    <string name="main_status_pending">Waiting for activation…</string>
+    <string name="grant_usage_access">Grant Usage Access</string>
+    <string name="sync_now">Sync Now</string>
+    <string name="grant_background_location">Grant Background Location (for Geofencing)</string>
+    <string name="enable_remote_lock">Enable Remote Lock</string>
+    <string name="enable_app_blocking">Enable App/Website Blocking</string>
+    <string name="accessibility_service_description">Lets the account administrator block selected apps and
+        websites during scheduled hours. Only checks which app is currently open (and, for
+        supported browsers, the address bar) — never reads message content or other on-screen
+        text.</string>
+    <string name="block_screen_title">This app is blocked right now</string>
+</resources>

@@ -1,0 +1,85 @@
+import { apiClient } from "./client";
+import type {
+  Alert,
+  AppUsageEntry,
+  BlockRule,
+  CallLogEntry,
+  Device,
+  FeatureFlags,
+  Geofence,
+  InstalledApp,
+  LocationPoint,
+  RemoteCommand,
+  SmsLogEntry,
+} from "./types";
+
+export const devicesApi = {
+  list: () => apiClient.get<Device[]>("/api/devices").then((r) => r.data),
+
+  create: (deviceLabel: string) =>
+    apiClient.post<Device>("/api/devices", { deviceLabel }).then((r) => r.data),
+
+  get: (id: string) => apiClient.get<Device>(`/api/devices/${id}`).then((r) => r.data),
+
+  updateFeatureFlags: (id: string, flags: Partial<FeatureFlags>) =>
+    apiClient.patch<FeatureFlags>(`/api/devices/${id}/feature-flags`, flags).then((r) => r.data),
+
+  appUsage: (id: string, date?: string) =>
+    apiClient
+      .get<AppUsageEntry[]>(`/api/devices/${id}/app-usage`, { params: date ? { date } : {} })
+      .then((r) => r.data),
+
+  smsLog: (id: string) => apiClient.get<SmsLogEntry[]>(`/api/devices/${id}/sms-log`).then((r) => r.data),
+
+  callLog: (id: string) => apiClient.get<CallLogEntry[]>(`/api/devices/${id}/call-log`).then((r) => r.data),
+
+  installedApps: (id: string) =>
+    apiClient.get<InstalledApp[]>(`/api/devices/${id}/installed-apps`).then((r) => r.data),
+
+  locationHistory: (id: string, limit = 50) =>
+    apiClient
+      .get<LocationPoint[]>(`/api/devices/${id}/location-history`, { params: { limit } })
+      .then((r) => r.data),
+
+  alerts: (id: string) => apiClient.get<Alert[]>(`/api/devices/${id}/alerts`).then((r) => r.data),
+
+  // Commands
+  createCommand: (id: string, commandType: string, payload?: Record<string, unknown>) =>
+    apiClient
+      .post<RemoteCommand & { push: { sent: boolean; reason?: string } }>(
+        `/api/devices/${id}/commands`,
+        { commandType, payload }
+      )
+      .then((r) => r.data),
+
+  listCommands: (id: string) =>
+    apiClient.get<RemoteCommand[]>(`/api/devices/${id}/commands`).then((r) => r.data),
+
+  getCommand: (id: string, commandId: string) =>
+    apiClient.get<RemoteCommand>(`/api/devices/${id}/commands/${commandId}`).then((r) => r.data),
+
+  // Geofences
+  listGeofences: (id: string) =>
+    apiClient.get<Geofence[]>(`/api/devices/${id}/geofences`).then((r) => r.data),
+
+  createGeofence: (id: string, geofence: { name: string; latitude: number; longitude: number; radiusM: number }) =>
+    apiClient.post<Geofence>(`/api/devices/${id}/geofences`, geofence).then((r) => r.data),
+
+  deleteGeofence: (id: string, geofenceId: string) =>
+    apiClient.delete(`/api/devices/${id}/geofences/${geofenceId}`),
+
+  // Block rules
+  listBlockRules: (id: string) =>
+    apiClient.get<BlockRule[]>(`/api/devices/${id}/block-rules`).then((r) => r.data),
+
+  createBlockRule: (
+    id: string,
+    rule: { ruleType: "app" | "website"; target: string; schedule?: { days?: string[]; start?: string; end?: string } }
+  ) => apiClient.post<BlockRule>(`/api/devices/${id}/block-rules`, rule).then((r) => r.data),
+
+  updateBlockRule: (id: string, ruleId: string, updates: { active?: boolean }) =>
+    apiClient.patch<BlockRule>(`/api/devices/${id}/block-rules/${ruleId}`, updates).then((r) => r.data),
+
+  deleteBlockRule: (id: string, ruleId: string) =>
+    apiClient.delete(`/api/devices/${id}/block-rules/${ruleId}`),
+};

@@ -1,0 +1,34 @@
+# Secrets — never commit these
+backend/.env
+backend/firebase-service-account.json
+android-app/app/google-services.json
+android-app/local.properties
+
+# Node
+**/node_modules/
+backend/server.log
+dashboard/dashboard_dev.log
+
+# Android build output
+android-app/.gradle/
+android-app/app/build/
+android-app/build/
+android-app/*.iml
+android-app/.idea/
+android-app/local.properties
+android-app/captures/
+android-app/.cxx/
+
+# Dashboard build output
+dashboard/dist/
+dashboard/dist-ssr/
+
+# Editor / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.sw?
+
+# Scratch/test files
+*.png
