@@ -62,8 +62,13 @@ router.post(
  */
 router.get("/", requireAuth, async (req, res, next) => {
   try {
+    // device_token is included so the dashboard can show/re-show the
+    // connect code for 'pending' and 'revoked' devices (an admin may need
+    // to re-share it, or reconnect a deactivated device) — see POST
+    // /api/devices/activate, which accepts the same token again regardless
+    // of the device's current status.
     const result = await pool.query(
-      `SELECT id, device_label, status, platform, os_version, app_version,
+      `SELECT id, device_label, device_token, status, platform, os_version, app_version,
               consent_given_at, last_seen_at, created_at
        FROM devices WHERE tenant_id = $1 ORDER BY created_at DESC`,
       [req.auth.tenantId]
@@ -81,7 +86,7 @@ router.get("/", requireAuth, async (req, res, next) => {
 router.get("/:id", requireAuth, async (req, res, next) => {
   try {
     const deviceResult = await pool.query(
-      `SELECT id, device_label, status, platform, os_version, app_version,
+      `SELECT id, device_label, device_token, status, platform, os_version, app_version,
               consent_given_at, last_seen_at, created_at
        FROM devices WHERE id = $1 AND tenant_id = $2`,
       [req.params.id, req.auth.tenantId]
@@ -132,6 +137,31 @@ router.patch("/:id/feature-flags", requireAuth, async (req, res, next) => {
       values
     );
 
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/devices/:id/deactivate
+ * (Admin, authenticated) Soft-disconnects a device — flips status to
+ * 'revoked', which immediately rejects its JWT on every sync call (see
+ * deviceAuth.middleware.js), so the phone stops syncing right away. No data
+ * is deleted: history stays queryable, and the same device_token can be
+ * re-entered on the target phone's activation screen to reconnect later
+ * (POST /api/devices/activate sets status back to 'active' regardless of
+ * the device's current status).
+ */
+router.post("/:id/deactivate", requireAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `UPDATE devices SET status = 'revoked', updated_at = now()
+       WHERE id = $1 AND tenant_id = $2
+       RETURNING id, device_label, device_token, status`,
+      [req.params.id, req.auth.tenantId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: "Device not found" });
     res.json(result.rows[0]);
   } catch (err) {
     next(err);

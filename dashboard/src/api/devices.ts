@@ -24,6 +24,15 @@ export const devicesApi = {
   updateFeatureFlags: (id: string, flags: Partial<FeatureFlags>) =>
     apiClient.patch<FeatureFlags>(`/api/devices/${id}/feature-flags`, flags).then((r) => r.data),
 
+  /**
+   * Soft-disconnect — the device stops syncing immediately (its JWT is
+   * rejected server-side on the next call), but nothing is deleted. The
+   * same device_token can be re-entered on the target phone later to
+   * reconnect it.
+   */
+  deactivate: (id: string) =>
+    apiClient.post<Device>(`/api/devices/${id}/deactivate`).then((r) => r.data),
+
   appUsage: (id: string, date?: string) =>
     apiClient
       .get<AppUsageEntry[]>(`/api/devices/${id}/app-usage`, { params: date ? { date } : {} })

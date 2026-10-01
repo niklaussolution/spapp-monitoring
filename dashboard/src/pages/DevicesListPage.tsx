@@ -28,6 +28,9 @@ export default function DevicesListPage() {
     load();
   }
 
+  const connectedDevices = devices.filter((d) => d.status !== "revoked");
+  const deactivatedDevices = devices.filter((d) => d.status === "revoked");
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -86,37 +89,76 @@ export default function DevicesListPage() {
       ) : devices.length === 0 ? (
         <p className="text-gray-500 text-sm">No devices yet. Click "Add Device" to get started.</p>
       ) : (
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500 text-left">
-              <tr>
-                <th className="px-4 py-3 font-medium">Label</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">OS</th>
-                <th className="px-4 py-3 font-medium">Last Seen</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {devices.map((d) => (
-                <tr key={d.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <Link to={`/devices/${d.id}`} className="text-accent hover:underline font-medium">
-                      {d.device_label}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={d.status} />
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{d.os_version || "—"}</td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {d.last_seen_at ? new Date(d.last_seen_at).toLocaleString() : "Never"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <DeviceTable devices={connectedDevices} emptyText="No connected devices." showCode />
+
+          {deactivatedDevices.length > 0 && (
+            <div className="mt-8">
+              <h2 className="text-sm font-semibold text-gray-500 mb-3">
+                Deactivated Devices ({deactivatedDevices.length})
+              </h2>
+              <p className="text-xs text-gray-400 mb-3">
+                Disconnected — not syncing. Re-enter a device's code on the target phone's
+                activation screen to reconnect it; its history is kept.
+              </p>
+              <DeviceTable devices={deactivatedDevices} emptyText="" showCode />
+            </div>
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+function DeviceTable({
+  devices,
+  emptyText,
+  showCode,
+}: {
+  devices: Device[];
+  emptyText: string;
+  showCode?: boolean;
+}) {
+  if (devices.length === 0) {
+    return emptyText ? <p className="text-gray-500 text-sm">{emptyText}</p> : null;
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 text-gray-500 text-left">
+          <tr>
+            <th className="px-4 py-3 font-medium">Label</th>
+            <th className="px-4 py-3 font-medium">Status</th>
+            <th className="px-4 py-3 font-medium">OS</th>
+            <th className="px-4 py-3 font-medium">Last Seen</th>
+            {showCode && <th className="px-4 py-3 font-medium">Reconnect Code</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {devices.map((d) => (
+            <tr key={d.id} className="hover:bg-gray-50">
+              <td className="px-4 py-3">
+                <Link to={`/devices/${d.id}`} className="text-accent hover:underline font-medium">
+                  {d.device_label}
+                </Link>
+              </td>
+              <td className="px-4 py-3">
+                <StatusBadge status={d.status} />
+              </td>
+              <td className="px-4 py-3 text-gray-600">{d.os_version || "—"}</td>
+              <td className="px-4 py-3 text-gray-600">
+                {d.last_seen_at ? new Date(d.last_seen_at).toLocaleString() : "Never"}
+              </td>
+              {showCode && (
+                <td className="px-4 py-3">
+                  <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">{d.device_token}</code>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -127,9 +169,10 @@ function StatusBadge({ status }: { status: string }) {
     pending: "bg-yellow-100 text-yellow-700",
     revoked: "bg-red-100 text-red-700",
   };
+  const labels: Record<string, string> = { revoked: "deactivated" };
   return (
     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] || "bg-gray-100"}`}>
-      {status}
+      {labels[status] || status}
     </span>
   );
 }
