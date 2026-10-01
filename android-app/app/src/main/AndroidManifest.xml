@@ -42,6 +42,23 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <!-- Package visibility (Android 11+ / targetSdk 30+): without this,
+         getInstalledApplications() silently returns only a filtered subset
+         (apps that interact with this app), excluding most third-party apps
+         like WhatsApp or Instagram — which is why Installed Apps was showing
+         an incomplete list. This app is sideloaded, not Play-Store-distributed,
+         so the Play policy restriction on this permission does not apply. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- Foreground service (Phase: reliable near-real-time sync) — replaces
+         relying on a manual "Sync Now" tap or a 3-hour WorkManager interval.
+         The ongoing notification is the same one already promised in the
+         consent screen text. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".SpappApplication"
         android:allowBackup="false"
@@ -103,6 +120,20 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Primary near-real-time sync loop — see SyncForegroundService doc comment -->
+        <service
+            android:name=".sync.SyncForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <receiver
+            android:name=".sync.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- App/website blocking (Phase 7) — activation requires the user to
              manually enable it in system Accessibility settings; Android does

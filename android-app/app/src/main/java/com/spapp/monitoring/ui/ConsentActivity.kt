@@ -32,6 +32,11 @@ class ConsentActivity : AppCompatActivity() {
         add(Manifest.permission.READ_CALL_LOG)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.READ_MEDIA_IMAGES)
+            // Android 13+ requires explicit runtime consent to show any
+            // notification, including the ongoing "monitoring active" one
+            // from SyncForegroundService that this consent screen already
+            // promises — without it the service would still run, just silently.
+            add(Manifest.permission.POST_NOTIFICATIONS)
         }
     }.toTypedArray()
 

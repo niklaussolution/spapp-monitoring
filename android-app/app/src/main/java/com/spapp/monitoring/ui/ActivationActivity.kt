@@ -56,6 +56,9 @@ class ActivationActivity : AppCompatActivity() {
                     state.authToken = body.authToken
                     state.deviceId = body.device.id
 
+                    com.spapp.monitoring.sync.SyncScheduler.schedule(applicationContext)
+                    com.spapp.monitoring.sync.SyncForegroundService.start(applicationContext)
+
                     Toast.makeText(
                         this@ActivationActivity,
                         getString(R.string.activation_success),

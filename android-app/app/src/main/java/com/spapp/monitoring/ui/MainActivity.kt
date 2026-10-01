@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
         geofenceManager = GeofenceManager(this)
 
         SyncScheduler.schedule(applicationContext)
+        com.spapp.monitoring.sync.SyncForegroundService.start(applicationContext)
         uploadCurrentFcmToken()
 
         binding.btnGrantUsageAccess.setOnClickListener {

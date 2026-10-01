@@ -34,6 +34,8 @@
     <string name="grant_file_access">Grant Full File Access</string>
     <string name="grant_battery_exemption">Allow Background Activity (recommended)</string>
     <string name="grant_autostart">Enable Autostart (required on Xiaomi/MIUI)</string>
+    <string name="sync_notification_title">Spapp Monitor</string>
+    <string name="sync_notification_body">Monitoring active for this device.</string>
     <string name="accessibility_service_description">Lets the account administrator block selected apps and
         websites during scheduled hours. Only checks which app is currently open (and, for
         supported browsers, the address bar) — never reads message content or other on-screen
