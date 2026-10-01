@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { devicesApi } from "../api/devices";
 import { downloadFileViaRelay } from "../api/fileDownload";
 
@@ -16,6 +16,12 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Path strings come back as "Download/Pics/photo.jpg" relative to device storage root. */
+function parentOf(path: string): string {
+  const idx = path.lastIndexOf("/");
+  return idx === -1 ? "" : path.slice(0, idx);
+}
+
 export default function RemoteActionsCard({
   deviceId,
   onLocationUpdated,
@@ -26,7 +32,21 @@ export default function RemoteActionsCard({
   const [status, setStatus] = useState<string | null>(null);
   const [files, setFiles] = useState<FileEntryDtoLocal[] | null>(null);
   const [fileListLoading, setFileListLoading] = useState(false);
-  const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
+  const [currentPath, setCurrentPath] = useState("");
+  const [popupFile, setPopupFile] = useState<FileEntryDtoLocal | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const children = useMemo(() => {
+    if (!files) return [];
+    return files
+      .filter((f) => parentOf(f.path) === currentPath)
+      .sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+  }, [files, currentPath]);
+
+  const breadcrumbs = currentPath ? currentPath.split("/") : [];
 
   async function pollCommand(commandId: string, label: string) {
     setStatus(`${label}: waiting for device...`);
@@ -59,10 +79,12 @@ export default function RemoteActionsCard({
     await pollCommand(cmd.id, "Lock device");
   }
 
-  /** One click fetches the WHOLE device storage tree recursively — no per-folder navigation. */
+  /** One click fetches the WHOLE device storage tree in one go; browsing it is done client-side. */
   async function handleFileList() {
     setFileListLoading(true);
     setFiles(null);
+    setCurrentPath("");
+    setPopupFile(null);
     setStatus(null);
     try {
       const cmd = await devicesApi.createCommand(deviceId, "file_list");
@@ -76,8 +98,16 @@ export default function RemoteActionsCard({
     }
   }
 
+  function handleRowClick(file: FileEntryDtoLocal) {
+    if (file.isDirectory) {
+      setCurrentPath(file.path);
+    } else {
+      setPopupFile(file);
+    }
+  }
+
   async function handleDownload(file: FileEntryDtoLocal) {
-    setDownloadingPath(file.path);
+    setDownloading(true);
     setStatus(`Preparing download: ${file.name}...`);
     try {
       const cmd = await devicesApi.createCommand(deviceId, "file_download", { path: file.path });
@@ -87,10 +117,11 @@ export default function RemoteActionsCard({
       await pollCommand(cmd.id, `Download: ${file.name}`);
       await downloadPromise;
       setStatus(`Downloaded ${file.name}.`);
+      setPopupFile(null);
     } catch (e) {
       setStatus(`Download failed: ${(e as Error).message}`);
     } finally {
-      setDownloadingPath(null);
+      setDownloading(false);
     }
   }
 
@@ -105,39 +136,86 @@ export default function RemoteActionsCard({
       {status && <p className="text-xs text-gray-500 mb-3">{status}</p>}
 
       {files && (
-        <div className="border rounded max-h-96 overflow-y-auto">
-          {files.length === 0 ? (
-            <p className="text-xs text-gray-400 p-3">No files found.</p>
-          ) : (
-            <table className="w-full text-xs">
-              <tbody className="divide-y">
-                {files.map((f) => {
-                  const depth = f.path.split("/").length - 1;
-                  return (
-                    <tr key={f.path}>
-                      <td className="px-3 py-1.5" style={{ paddingLeft: `${12 + depth * 16}px` }}>
-                        {f.isDirectory ? "📁" : "📄"} {f.name}
-                      </td>
+        <div className="border rounded">
+          <div className="flex items-center gap-1 px-3 py-2 border-b bg-gray-50 text-xs overflow-x-auto whitespace-nowrap">
+            <button
+              onClick={() => setCurrentPath("")}
+              className={`hover:underline ${currentPath === "" ? "font-semibold text-gray-700" : "text-accent"}`}
+            >
+              Storage
+            </button>
+            {breadcrumbs.map((segment, i) => {
+              const segPath = breadcrumbs.slice(0, i + 1).join("/");
+              const isLast = i === breadcrumbs.length - 1;
+              return (
+                <span key={segPath} className="flex items-center gap-1">
+                  <span className="text-gray-300">/</span>
+                  <button
+                    onClick={() => setCurrentPath(segPath)}
+                    className={`hover:underline ${isLast ? "font-semibold text-gray-700" : "text-accent"}`}
+                  >
+                    {segment}
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+
+          <div className="max-h-96 overflow-y-auto">
+            {children.length === 0 ? (
+              <p className="text-xs text-gray-400 p-3">This folder is empty.</p>
+            ) : (
+              <table className="w-full text-xs">
+                <tbody className="divide-y">
+                  {children.map((f) => (
+                    <tr
+                      key={f.path}
+                      onClick={() => handleRowClick(f)}
+                      className="cursor-pointer hover:bg-gray-50"
+                    >
+                      <td className="px-3 py-1.5">{f.isDirectory ? "📁" : "📄"} {f.name}</td>
                       <td className="px-3 py-1.5 text-gray-500 text-right whitespace-nowrap">
                         {f.sizeBytes != null ? formatSize(f.sizeBytes) : ""}
                       </td>
-                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
-                        {!f.isDirectory && (
-                          <button
-                            onClick={() => handleDownload(f)}
-                            disabled={downloadingPath === f.path}
-                            className="text-accent hover:underline disabled:opacity-50 disabled:cursor-wait"
-                          >
-                            {downloadingPath === f.path ? "..." : "Download"}
-                          </button>
-                        )}
-                      </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {popupFile && (
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
+          onClick={() => !downloading && setPopupFile(null)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-lg p-4 w-72"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-medium mb-1 break-all">📄 {popupFile.name}</p>
+            {popupFile.sizeBytes != null && (
+              <p className="text-xs text-gray-400 mb-3">{formatSize(popupFile.sizeBytes)}</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleDownload(popupFile)}
+                disabled={downloading}
+                className="flex-1 bg-primary text-white text-xs px-3 py-2 rounded hover:bg-primary-dark transition disabled:opacity-50"
+              >
+                {downloading ? "Downloading..." : "Download"}
+              </button>
+              <button
+                onClick={() => setPopupFile(null)}
+                disabled={downloading}
+                className="px-3 py-2 text-xs rounded border text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

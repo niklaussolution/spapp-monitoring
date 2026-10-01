@@ -93,6 +93,7 @@ class SyncRunner(private val context: Context) {
             commands.filter { it.command_type == "file_download" }.forEach { processFileDownloadCommand(bearer, it) }
         }
 
+        state.lastSyncAtEpochMs = System.currentTimeMillis()
         return true
     }
 

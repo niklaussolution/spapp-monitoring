@@ -41,11 +41,17 @@ class DeviceState(context: Context) {
         get() = prefs.getLong(KEY_CALL_LAST_EXTERNAL_ID, -1L)
         set(value) = prefs.edit { putLong(KEY_CALL_LAST_EXTERNAL_ID, value) }
 
+    /** Epoch millis of the last successful sync pass — shown as in-app status text (no notification). */
+    var lastSyncAtEpochMs: Long
+        get() = prefs.getLong(KEY_LAST_SYNC_AT, 0L)
+        set(value) = prefs.edit { putLong(KEY_LAST_SYNC_AT, value) }
+
     companion object {
         private const val KEY_CONSENT_GIVEN = "consent_given"
         private const val KEY_AUTH_TOKEN = "auth_token"
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_SMS_LAST_EXTERNAL_ID = "sms_last_external_id"
         private const val KEY_CALL_LAST_EXTERNAL_ID = "call_last_external_id"
+        private const val KEY_LAST_SYNC_AT = "last_sync_at"
     }
 }

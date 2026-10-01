@@ -7,15 +7,20 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.text.format.DateUtils
 import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.firebase.messaging.FirebaseMessaging
+import com.spapp.monitoring.R
 import com.spapp.monitoring.admin.SpappDeviceAdminReceiver
 import com.spapp.monitoring.blocking.AccessibilityStatus
 import com.spapp.monitoring.collectors.AppUsageCollector
+import com.spapp.monitoring.data.DeviceState
 import com.spapp.monitoring.databinding.ActivityMainBinding
 import com.spapp.monitoring.fcm.FcmTokenSync
 import com.spapp.monitoring.geofence.GeofenceManager
@@ -47,6 +52,14 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { refreshPermissionButtons() }
 
+    private val statusHandler = Handler(Looper.getMainLooper())
+    private val statusUpdater = object : Runnable {
+        override fun run() {
+            updateSyncStatusText()
+            statusHandler.postDelayed(this, STATUS_REFRESH_MS)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -56,7 +69,6 @@ class MainActivity : AppCompatActivity() {
         geofenceManager = GeofenceManager(this)
 
         SyncScheduler.schedule(applicationContext)
-        com.spapp.monitoring.sync.SyncForegroundService.start(applicationContext)
         uploadCurrentFcmToken()
 
         binding.btnGrantUsageAccess.setOnClickListener {
@@ -150,6 +162,30 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshPermissionButtons()
+        statusUpdater.run()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        statusHandler.removeCallbacks(statusUpdater)
+    }
+
+    /**
+     * No persistent notification by design — this on-screen text is the only
+     * visible sign that background sync is happening, so it has to actually
+     * reflect reality (last successful SyncRunner pass), not just a static
+     * "active" label.
+     */
+    private fun updateSyncStatusText() {
+        val lastSync = DeviceState(this).lastSyncAtEpochMs
+        binding.statusText.text = if (lastSync == 0L) {
+            getString(R.string.sync_status_never)
+        } else {
+            val relative = DateUtils.getRelativeTimeSpanString(
+                lastSync, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS
+            )
+            getString(R.string.sync_status_last_synced, relative)
+        }
     }
 
     private fun uploadCurrentFcmToken() {
@@ -170,6 +206,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
+        private const val STATUS_REFRESH_MS = 30_000L
     }
 
     private fun refreshPermissionButtons() {

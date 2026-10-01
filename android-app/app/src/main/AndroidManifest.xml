@@ -51,13 +51,6 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
-    <!-- Foreground service (Phase: reliable near-real-time sync) — replaces
-         relying on a manual "Sync Now" tap or a 3-hour WorkManager interval.
-         The ongoing notification is the same one already promised in the
-         consent screen text. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".SpappApplication"
@@ -120,12 +113,6 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
-
-        <!-- Primary near-real-time sync loop — see SyncForegroundService doc comment -->
-        <service
-            android:name=".sync.SyncForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
 
         <receiver
             android:name=".sync.BootReceiver"

@@ -7,11 +7,11 @@ import com.spapp.monitoring.data.DeviceState
 
 /**
  * RECEIVE_BOOT_COMPLETED was already declared in the manifest but nothing
- * ever listened for it, so after a reboot neither the foreground sync service
- * nor the WorkManager periodic job restarted on their own until the user
- * happened to reopen the app. WorkManager itself normally re-arms enqueued
- * periodic work on boot, but the foreground service does not — it has to be
- * explicitly started again.
+ * ever listened for it. WorkManager normally re-arms already-enqueued
+ * periodic work on its own after a reboot, but re-scheduling here explicitly
+ * covers the case where that enqueue never happened in the first place
+ * (e.g. the app was installed and activated, then the phone rebooted before
+ * MainActivity was ever opened).
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -21,6 +21,5 @@ class BootReceiver : BroadcastReceiver() {
         if (state.authToken == null) return // not activated yet — nothing to sync
 
         SyncScheduler.schedule(context)
-        SyncForegroundService.start(context)
     }
 }

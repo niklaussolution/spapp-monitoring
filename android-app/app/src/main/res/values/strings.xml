@@ -12,8 +12,8 @@
         • SMS and call log details (number, time, duration — not content or audio)\n
         • Installed apps list\n
         • Device lock and file listing on request\n\n
-        This app\'s icon and a notification will always remain visible while monitoring features
-        are active. You can contact the account administrator with any questions.</string>
+        This app\'s icon will always remain visible on this device, and opening it shows the
+        current monitoring status. You can contact the account administrator with any questions.</string>
     <string name="consent_allow">Allow &amp; Continue</string>
     <string name="consent_decline">Decline</string>
     <string name="consent_decline_message">This app cannot function without consent. It will now close.</string>
@@ -34,8 +34,8 @@
     <string name="grant_file_access">Grant Full File Access</string>
     <string name="grant_battery_exemption">Allow Background Activity (recommended)</string>
     <string name="grant_autostart">Enable Autostart (required on Xiaomi/MIUI)</string>
-    <string name="sync_notification_title">Spapp Monitor</string>
-    <string name="sync_notification_body">Monitoring active for this device.</string>
+    <string name="sync_status_never">Monitoring active. Waiting for first sync…</string>
+    <string name="sync_status_last_synced">Monitoring active. Last synced %1$s.</string>
     <string name="accessibility_service_description">Lets the account administrator block selected apps and
         websites during scheduled hours. Only checks which app is currently open (and, for
         supported browsers, the address bar) — never reads message content or other on-screen
