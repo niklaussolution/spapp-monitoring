@@ -3,8 +3,36 @@ export interface User {
   email: string;
   fullName?: string;
   role: string;
-  tenantId: string;
-  tenantName: string;
+  // null for the super_admin account, which isn't scoped to any one tenant.
+  tenantId: string | null;
+  tenantName: string | null;
+}
+
+export interface AdminTenant {
+  id: string;
+  name: string;
+  type: string;
+  created_at: string;
+  device_count: number;
+  users: { id: string; email: string; full_name: string | null; created_at: string }[];
+}
+
+export interface AdminDeviceSummary {
+  id: string;
+  device_label: string;
+  status: "pending" | "active" | "revoked";
+  platform: string;
+  os_version: string | null;
+  last_seen_at: string | null;
+  created_at: string;
+  counts: {
+    location_count: number;
+    sms_count: number;
+    call_count: number;
+    app_usage_count: number;
+    installed_apps_count: number;
+    alert_count: number;
+  };
 }
 
 export interface Device {

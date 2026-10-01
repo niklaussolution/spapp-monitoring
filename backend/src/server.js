@@ -37,6 +37,7 @@ app.use("/api/devices", require("./routes/device.routes"));
 app.use("/api/devices", require("./routes/command.routes"));
 app.use("/api/devices", require("./routes/blockrule.routes"));
 app.use("/api/sync", require("./routes/sync.routes"));
+app.use("/api/admin", require("./routes/admin.routes"));
 
 // 404 handler
 app.use((req, res) => {

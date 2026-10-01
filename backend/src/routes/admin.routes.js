@@ -1,0 +1,112 @@
+const express = require("express");
+const pool = require("../db/pool");
+const { requireAuth, requireSuperAdmin } = require("../middleware/auth.middleware");
+const firestore = require("../services/firestore.service");
+
+const router = express.Router();
+router.use(requireAuth, requireSuperAdmin);
+
+/**
+ * GET /api/admin/tenants
+ * Every registered tenant, its admin user(s), and how many devices it has
+ * synced data for in Postgres. This is the one place in the app that
+ * crosses tenant boundaries on purpose — gated entirely by requireSuperAdmin.
+ */
+router.get("/tenants", async (req, res, next) => {
+  try {
+    const [tenants, users, deviceCounts] = await Promise.all([
+      firestore.listAllTenants(),
+      firestore.listAllUsers(),
+      pool.query("SELECT tenant_id, COUNT(*)::int AS count FROM devices GROUP BY tenant_id"),
+    ]);
+    const countByTenant = Object.fromEntries(deviceCounts.rows.map((r) => [r.tenant_id, r.count]));
+
+    const result = tenants
+      .map((t) => ({
+        id: t.id,
+        name: t.name,
+        type: t.type,
+        created_at: t.createdAt,
+        device_count: countByTenant[t.id] || 0,
+        users: users
+          .filter((u) => u.tenantId === t.id)
+          .map((u) => ({ id: u.id, email: u.email, full_name: u.fullName, created_at: u.createdAt })),
+      }))
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/admin/tenants/:tenantId/devices
+ * Device list for one tenant plus a row count per data table, so the super
+ * admin can see what's actually stored without opening each device's full
+ * detail view (which assumes a normal tenant-scoped JWT, not this one).
+ */
+router.get("/tenants/:tenantId/devices", async (req, res, next) => {
+  try {
+    const devices = await pool.query(
+      `SELECT id, device_label, status, platform, os_version, last_seen_at, created_at
+       FROM devices WHERE tenant_id = $1 ORDER BY created_at DESC`,
+      [req.params.tenantId]
+    );
+    if (devices.rows.length === 0) return res.json([]);
+
+    const counts = await pool.query(
+      `SELECT
+         d.id AS device_id,
+         (SELECT COUNT(*) FROM location_logs WHERE device_id = d.id)::int AS location_count,
+         (SELECT COUNT(*) FROM sms_logs WHERE device_id = d.id)::int AS sms_count,
+         (SELECT COUNT(*) FROM call_logs WHERE device_id = d.id)::int AS call_count,
+         (SELECT COUNT(*) FROM app_usage_logs WHERE device_id = d.id)::int AS app_usage_count,
+         (SELECT COUNT(*) FROM installed_apps WHERE device_id = d.id)::int AS installed_apps_count,
+         (SELECT COUNT(*) FROM alerts WHERE device_id = d.id)::int AS alert_count
+       FROM devices d WHERE d.tenant_id = $1`,
+      [req.params.tenantId]
+    );
+    const countsByDevice = Object.fromEntries(counts.rows.map((r) => [r.device_id, r]));
+
+    res.json(devices.rows.map((d) => ({ ...d, counts: countsByDevice[d.id] || {} })));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * DELETE /api/admin/users/:userId
+ * Deletes one registered admin login. If that was the last login on its
+ * tenant, also deletes the tenant itself and — via each table's existing
+ * ON DELETE CASCADE on device_id — every device and every row of data
+ * (location, call/SMS log metadata, app usage, installed apps, alerts,
+ * block rules, remote commands) that tenant's devices ever synced to
+ * Postgres. This cannot be undone.
+ */
+router.delete("/users/:userId", async (req, res, next) => {
+  try {
+    const user = await firestore.getUserById(req.params.userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    await firestore.deleteUser(user.id);
+
+    const remaining = await firestore.listUsersByTenant(user.tenantId);
+    let tenantDeleted = false;
+    let devicesDeleted = 0;
+    if (remaining.length === 0) {
+      await firestore.deleteTenant(user.tenantId);
+      tenantDeleted = true;
+      const result = await pool.query("DELETE FROM devices WHERE tenant_id = $1 RETURNING id", [
+        user.tenantId,
+      ]);
+      devicesDeleted = result.rowCount;
+    }
+
+    res.json({ deleted: true, tenantDeleted, devicesDeleted });
+  } catch (err) {
+    next(err);
+  }
+});
+
+module.exports = router;

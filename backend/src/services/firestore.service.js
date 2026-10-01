@@ -68,6 +68,26 @@ async function listUsersByTenant(tenantId) {
   return snap.docs.map((d) => d.data()).sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
 }
 
+/** Super-admin only — every tenant that's ever registered. */
+async function listAllTenants() {
+  const snap = await db().collection(TENANTS).get();
+  return snap.docs.map((d) => d.data());
+}
+
+/** Super-admin only — every registered admin login, across all tenants. */
+async function listAllUsers() {
+  const snap = await db().collection(USERS).get();
+  return snap.docs.map((d) => d.data());
+}
+
+async function deleteUser(id) {
+  await db().collection(USERS).doc(id).delete();
+}
+
+async function deleteTenant(id) {
+  await db().collection(TENANTS).doc(id).delete();
+}
+
 module.exports = {
   createTenant,
   getTenant,
@@ -75,4 +95,8 @@ module.exports = {
   getUserById,
   createUser,
   listUsersByTenant,
+  listAllTenants,
+  listAllUsers,
+  deleteUser,
+  deleteTenant,
 };

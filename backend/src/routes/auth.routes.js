@@ -88,10 +88,13 @@ router.post(
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
-      const tenant = await firestore.getTenant(user.tenantId);
+      // The super admin account has no tenantId — it isn't scoped to any
+      // one tenant, so there's nothing to look up here (see admin.routes.js
+      // for what it can actually do).
+      const tenant = user.role === "super_admin" ? null : await firestore.getTenant(user.tenantId);
 
       const token = jwt.sign(
-        { sub: user.id, tenantId: user.tenantId, role: user.role },
+        { sub: user.id, tenantId: user.tenantId || null, role: user.role },
         process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
       );
@@ -103,7 +106,7 @@ router.post(
           email: user.email,
           fullName: user.fullName,
           role: user.role,
-          tenantId: user.tenantId,
+          tenantId: user.tenantId || null,
           tenantName: tenant?.name || null,
         },
       });

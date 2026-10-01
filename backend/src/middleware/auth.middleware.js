@@ -21,4 +21,17 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth };
+/**
+ * Gate for the super-admin-only routes (admin.routes.js). The super admin
+ * account is seeded directly into Firestore (see scripts/create-super-admin.js)
+ * rather than through any registration endpoint — there is no public way to
+ * create one over HTTP.
+ */
+function requireSuperAdmin(req, res, next) {
+  if (!req.auth || req.auth.role !== "super_admin") {
+    return res.status(403).json({ error: "Super admin access required" });
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireSuperAdmin };

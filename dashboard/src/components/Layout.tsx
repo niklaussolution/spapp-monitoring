@@ -13,11 +13,13 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-background">
       <header className="bg-primary-dark text-white px-6 py-4 flex items-center justify-between">
-        <Link to="/devices" className="text-lg font-bold">
+        <Link to={user?.role === "super_admin" ? "/admin" : "/devices"} className="text-lg font-bold">
           Spapp Monitor
         </Link>
         <div className="flex items-center gap-4 text-sm">
-          <span className="text-gray-300">{user?.tenantName}</span>
+          <span className="text-gray-300">
+            {user?.role === "super_admin" ? "Super admin" : user?.tenantName}
+          </span>
           <button onClick={handleLogout} className="text-gray-300 hover:text-white transition">
             Sign out
           </button>
