@@ -32,6 +32,8 @@
     <string name="enable_remote_lock">Enable Remote Lock</string>
     <string name="enable_app_blocking">Enable App/Website Blocking</string>
     <string name="grant_file_access">Grant Full File Access</string>
+    <string name="grant_battery_exemption">Allow Background Activity (recommended)</string>
+    <string name="grant_autostart">Enable Autostart (required on Xiaomi/MIUI)</string>
     <string name="accessibility_service_description">Lets the account administrator block selected apps and
         websites during scheduled hours. Only checks which app is currently open (and, for
         supported browsers, the address bar) — never reads message content or other on-screen

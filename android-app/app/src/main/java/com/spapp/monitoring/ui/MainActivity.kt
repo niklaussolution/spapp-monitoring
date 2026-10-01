@@ -1,17 +1,18 @@
 package com.spapp.monitoring.ui
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.firebase.messaging.FirebaseMessaging
-import com.spapp.monitoring.BuildConfig
 import com.spapp.monitoring.admin.SpappDeviceAdminReceiver
 import com.spapp.monitoring.blocking.AccessibilityStatus
 import com.spapp.monitoring.collectors.AppUsageCollector
@@ -39,6 +40,10 @@ class MainActivity : AppCompatActivity() {
     ) { refreshPermissionButtons() }
 
     private val deviceAdminLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { refreshPermissionButtons() }
+
+    private val batteryExemptionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { refreshPermissionButtons() }
 
@@ -80,15 +85,64 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Debug/dev convenience only — production relies on the periodic
-        // WorkManager schedule and FCM-triggered on-demand commands, not a
-        // user-visible manual sync button.
-        if (BuildConfig.DEBUG) {
-            binding.btnSyncNow.setOnClickListener {
-                SyncScheduler.runOnce(applicationContext)
+        binding.btnGrantBatteryExemption.setOnClickListener {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
             }
-        } else {
-            binding.btnSyncNow.visibility = android.view.View.GONE
+            batteryExemptionLauncher.launch(intent)
+        }
+
+        binding.btnGrantAutostart.setOnClickListener {
+            openAutostartSettings()
+        }
+
+        // Kept available in every build, not just debug — on OEM ROMs (MIUI in
+        // particular) the periodic WorkManager schedule and FCM pushes are both
+        // unreliable in the background even with battery exemption granted, so
+        // the admin/user needs a manual way to force an immediate sync.
+        binding.btnSyncNow.setOnClickListener {
+            SyncScheduler.runOnce(applicationContext)
+        }
+    }
+
+    /**
+     * MIUI (and several other OEM ROMs) silently kill WorkManager jobs in the
+     * background unless the app is also allowlisted in the vendor's own
+     * "Autostart"/"Auto-launch" screen — there is no standard Android API for
+     * this, only vendor-specific activities that may not exist on a given ROM
+     * build, so every attempt is wrapped and falls back to the generic
+     * app-info screen instead of crashing or doing nothing.
+     */
+    private fun openAutostartSettings() {
+        val candidates = listOf(
+            Intent().setComponent(
+                ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")
+            ),
+            Intent().setComponent(
+                ComponentName("com.letv.android.letvsafe", "com.letv.android.letvsafe.AutobootManageActivity")
+            ),
+            Intent().setComponent(
+                ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity")
+            ),
+            Intent().setComponent(
+                ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity")
+            ),
+            Intent().setComponent(
+                ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")
+            ),
+        )
+        for (intent in candidates) {
+            try {
+                startActivity(intent)
+                return
+            } catch (e: Exception) {
+                // Not this OEM/ROM — try the next, then fall back below.
+            }
+        }
+        try {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        } catch (e: Exception) {
+            Log.e(TAG, "No autostart or app-info settings screen available", e)
         }
     }
 
@@ -135,5 +189,16 @@ class MainActivity : AppCompatActivity() {
         val hasFullFileAccess = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
         binding.btnGrantFileAccess.visibility =
             if (hasFullFileAccess) android.view.View.GONE else android.view.View.VISIBLE
+
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        val hasBatteryExemption = powerManager.isIgnoringBatteryOptimizations(packageName)
+        binding.btnGrantBatteryExemption.visibility =
+            if (hasBatteryExemption) android.view.View.GONE else android.view.View.VISIBLE
+
+        // No public API to check autostart allowlist status on any OEM, so this
+        // stays visible whenever battery exemption also still needs granting —
+        // on MIUI the two are usually set together during initial setup.
+        binding.btnGrantAutostart.visibility =
+            if (hasBatteryExemption) android.view.View.GONE else android.view.View.VISIBLE
     }
 }

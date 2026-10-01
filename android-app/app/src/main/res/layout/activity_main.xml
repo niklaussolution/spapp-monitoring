@@ -58,6 +58,22 @@
         android:layout_marginBottom="16dp" />
 
     <Button
+        android:id="@+id/btnGrantBatteryExemption"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/grant_battery_exemption"
+        android:visibility="gone"
+        android:layout_marginBottom="16dp" />
+
+    <Button
+        android:id="@+id/btnGrantAutostart"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/grant_autostart"
+        android:visibility="gone"
+        android:layout_marginBottom="16dp" />
+
+    <Button
         android:id="@+id/btnSyncNow"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

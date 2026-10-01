@@ -26,6 +26,11 @@
     <!-- Boot-time re-scheduling of periodic sync jobs -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Lets the app prompt the user to exempt it from Doze/App Standby battery
+         restrictions, which on many OEM ROMs (especially MIUI) otherwise kill
+         the periodic WorkManager sync job entirely in the background. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <!-- Full device storage access for File Manager (Phase 6 extended scope).
          This app is sideloaded (not Play-Store-distributed), so the Play
          Store policy gate on this permission does not apply — the admin
