@@ -14,5 +14,6 @@ data class WebHistoryEntry(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val url: String,
     val visitedAtEpochMs: Long,
+    val title: String? = null,
     val synced: Boolean = false
 )

@@ -303,7 +303,7 @@ class SyncRunner(private val context: Context) {
         val legacy = WebHistoryCollector(context).collectRecent()
 
         val dtos = unsynced.map {
-            WebHistoryEntryDto(it.url, null, Instant.ofEpochMilli(it.visitedAtEpochMs).toString())
+            WebHistoryEntryDto(it.url, it.title, Instant.ofEpochMilli(it.visitedAtEpochMs).toString())
         } + legacy.map {
             WebHistoryEntryDto(it.url, it.title, Instant.ofEpochMilli(it.visitedAtEpochMs).toString())
         }

@@ -66,7 +66,7 @@ class BlockAccessibilityService : AccessibilityService() {
         // below, which meant no rules configured == no history ever
         // recorded, even with the feature flag on.
         if (packageName in browserPackages) {
-            recordUrlIfEnabled(rootInActiveWindow)
+            recordUrlIfEnabled(event, rootInActiveWindow)
         }
 
         if (!::rulesCache.isInitialized) rulesCache = BlockRulesCache(applicationContext)
@@ -94,16 +94,32 @@ class BlockAccessibilityService : AccessibilityService() {
         }?.let { rule -> blockForeground(rule, urlBarText) }
     }
 
-    private fun recordUrlIfEnabled(root: AccessibilityNodeInfo?) {
+    // The omnibox shows one of these as hint text (not a real URL) on an
+    // empty/new-tab address bar — without filtering these out, every visit
+    // to a blank tab got logged as a fake "visit" to literally this phrase.
+    private val addressBarHints = listOf(
+        "search google or type url",
+        "search google or type web address",
+        "search or type url",
+        "search or type web address",
+    )
+
+    private fun recordUrlIfEnabled(event: AccessibilityEvent, root: AccessibilityNodeInfo?) {
         if (!DeviceState(applicationContext).webHistoryTrackingEnabled) return
         val url = findUrlBarText(root) ?: return
+        if (addressBarHints.any { url.trim().equals(it, ignoreCase = true) }) return // omnibox hint text, not a visit
         if (url == lastRecordedUrl) return // debounce — same URL re-fires on scroll/focus events
         lastRecordedUrl = url
+
+        // Chrome reports the page's <title> as the window-state event's own
+        // text (this is how the tab/window is announced to accessibility
+        // services) — separate from the url_bar node, which only has the URL.
+        val title = event.text?.firstOrNull()?.toString()?.takeIf { it.isNotBlank() }
 
         scope.launch {
             try {
                 AppDatabase.getInstance(applicationContext).webHistoryDao().insert(
-                    WebHistoryEntry(url = url, visitedAtEpochMs = System.currentTimeMillis())
+                    WebHistoryEntry(url = url, title = title, visitedAtEpochMs = System.currentTimeMillis())
                 )
             } catch (e: Exception) {
                 // Dropped — not worth retrying a single missed URL capture.

@@ -15,7 +15,7 @@ import androidx.room.RoomDatabase
         PendingSyncItem::class, AppUsageEntry::class, SmsLogEntry::class, CallLogEntry::class,
         WebHistoryEntry::class,
     ],
-    version = 4, // v4: added WebHistoryEntry (accessibility-captured browser URLs)
+    version = 5, // v5: added title to WebHistoryEntry
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -2,6 +2,20 @@ import { useEffect, useState } from "react";
 import { devicesApi } from "../api/devices";
 import type { WebHistoryEntry } from "../api/types";
 
+/** Captured address-bar text is often protocol-less (e.g. "wikipedia.org/wiki/Foo"). */
+function hostnameOf(url: string): string {
+  try {
+    const withProtocol = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    return new URL(withProtocol).hostname;
+  } catch {
+    return url.split("/")[0];
+  }
+}
+
+function absoluteUrl(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
 /**
  * Captured from the browser's address bar via the Accessibility Service
  * (BlockAccessibilityService), not Chrome's history directly — modern
@@ -43,13 +57,18 @@ export default function WebHistoryCard({ deviceId }: { deviceId: string }) {
                 <tr key={i}>
                   <td className="py-1.5">
                     <a
-                      href={e.url}
+                      href={absoluteUrl(e.url)}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-accent hover:underline"
+                      className="flex items-center gap-2 text-accent hover:underline"
                       title={e.url}
                     >
-                      {e.title || e.url}
+                      <img
+                        src={`https://www.google.com/s2/favicons?sz=32&domain=${hostnameOf(e.url)}`}
+                        alt=""
+                        className="w-4 h-4 flex-shrink-0"
+                      />
+                      <span className="truncate max-w-xs">{e.title || hostnameOf(e.url)}</span>
                     </a>
                   </td>
                   <td className="py-1.5 text-gray-500 whitespace-nowrap">
