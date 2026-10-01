@@ -169,6 +169,42 @@ router.post("/:id/deactivate", requireAuth, async (req, res, next) => {
 });
 
 /**
+ * DELETE /api/devices/:id
+ * (Admin, authenticated) Permanently purges a deactivated device and every
+ * row of data it ever synced — location history, app usage, web history,
+ * SMS/call log metadata, installed apps, block rules, alerts, and remote
+ * commands all cascade-delete with it (ON DELETE CASCADE on each table's
+ * device_id FK, see schema.sql). This is the one truly destructive
+ * operation in the device lifecycle, so it only works on a device that's
+ * already 'revoked' (deactivated) — an active device must be deactivated
+ * first, which is itself reversible. This cannot be undone.
+ *
+ * Note: device data has only ever lived in Postgres. Firestore only holds
+ * tenant/admin-user accounts, never device sync data, so there is nothing
+ * device-related to delete there.
+ */
+router.delete("/:id", requireAuth, async (req, res, next) => {
+  try {
+    const existing = await pool.query(
+      "SELECT status FROM devices WHERE id = $1 AND tenant_id = $2",
+      [req.params.id, req.auth.tenantId]
+    );
+    if (existing.rows.length === 0) return res.status(404).json({ error: "Device not found" });
+    if (existing.rows[0].status !== "revoked") {
+      return res.status(400).json({ error: "Deactivate this device before deleting it permanently" });
+    }
+
+    await pool.query("DELETE FROM devices WHERE id = $1 AND tenant_id = $2", [
+      req.params.id,
+      req.auth.tenantId,
+    ]);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/devices/activate
  * (Public — called by the Android app once, right after the user taps "Allow"
  * on the on-device consent screen.) Exchanges the one-time device_token for a

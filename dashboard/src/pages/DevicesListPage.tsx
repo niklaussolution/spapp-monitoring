@@ -98,10 +98,10 @@ export default function DevicesListPage() {
                 Deactivated Devices ({deactivatedDevices.length})
               </h2>
               <p className="text-xs text-gray-400 mb-3">
-                Disconnected — not syncing. Re-enter a device's code on the target phone's
-                activation screen to reconnect it; its history is kept.
+                Disconnected — not syncing. Click a device to view its stored data, reconnect it
+                with the same code, or delete it permanently.
               </p>
-              <DeviceTable devices={deactivatedDevices} emptyText="" showCode />
+              <DeviceTable devices={deactivatedDevices} emptyText="" showCode archived />
             </div>
           )}
         </>
@@ -114,10 +114,12 @@ function DeviceTable({
   devices,
   emptyText,
   showCode,
+  archived,
 }: {
   devices: Device[];
   emptyText: string;
   showCode?: boolean;
+  archived?: boolean;
 }) {
   if (devices.length === 0) {
     return emptyText ? <p className="text-gray-500 text-sm">{emptyText}</p> : null;
@@ -139,7 +141,10 @@ function DeviceTable({
           {devices.map((d) => (
             <tr key={d.id} className="hover:bg-gray-50">
               <td className="px-4 py-3">
-                <Link to={`/devices/${d.id}`} className="text-accent hover:underline font-medium">
+                <Link
+                  to={archived ? `/devices/${d.id}/archive` : `/devices/${d.id}`}
+                  className="text-accent hover:underline font-medium"
+                >
                   {d.device_label}
                 </Link>
               </td>

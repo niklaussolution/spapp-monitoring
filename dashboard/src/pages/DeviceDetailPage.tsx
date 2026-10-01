@@ -20,13 +20,22 @@ export default function DeviceDetailPage() {
   const [deactivating, setDeactivating] = useState(false);
 
   useEffect(() => {
-    if (id) devicesApi.get(id).then(setDevice);
-  }, [id]);
+    if (!id) return;
+    devicesApi.get(id).then((d) => {
+      // Deactivated devices live on their own read-only archive page now
+      // (see DeviceArchivePage) — this live view assumes a device that's
+      // still syncing, so redirect rather than show stale "Remote Actions"
+      // buttons that would just hang forever.
+      if (d.status === "revoked") {
+        navigate(`/devices/${id}/archive`, { replace: true });
+        return;
+      }
+      setDevice(d);
+    });
+  }, [id, navigate]);
 
   if (!id) return null;
   if (!device) return <p className="text-sm text-gray-500">Loading...</p>;
-
-  const isRevoked = device.status === "revoked";
 
   async function handleDeactivate() {
     if (!id) return;
@@ -39,8 +48,8 @@ export default function DeviceDetailPage() {
     }
     setDeactivating(true);
     try {
-      const updated = await devicesApi.deactivate(id);
-      setDevice({ ...device, ...updated });
+      await devicesApi.deactivate(id);
+      navigate(`/devices/${id}/archive`, { replace: true });
     } finally {
       setDeactivating(false);
     }
@@ -56,35 +65,18 @@ export default function DeviceDetailPage() {
         <div>
           <h1 className="text-xl font-bold text-primary-dark">{device.device_label}</h1>
           <p className="text-xs text-gray-500">
-            {device.status === "revoked" ? "deactivated" : device.status} · {device.os_version || "unknown OS"} ·
+            {device.status} · {device.os_version || "unknown OS"} ·
             last seen {device.last_seen_at ? new Date(device.last_seen_at).toLocaleString() : "never"}
           </p>
         </div>
-        {!isRevoked && (
-          <button
-            onClick={handleDeactivate}
-            disabled={deactivating}
-            className="text-red-600 border border-red-200 text-sm px-4 py-2 rounded hover:bg-red-50 transition disabled:opacity-50"
-          >
-            {deactivating ? "Deactivating..." : "Deactivate Device"}
-          </button>
-        )}
+        <button
+          onClick={handleDeactivate}
+          disabled={deactivating}
+          className="text-red-600 border border-red-200 text-sm px-4 py-2 rounded hover:bg-red-50 transition disabled:opacity-50"
+        >
+          {deactivating ? "Deactivating..." : "Deactivate Device"}
+        </button>
       </div>
-
-      {isRevoked && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded p-4 mb-6 text-sm">
-          <p className="font-medium mb-1">This device is deactivated — it is not syncing.</p>
-          <p className="text-gray-600 mb-2">
-            To reconnect it, re-enter this code on the target phone's activation screen:
-          </p>
-          <code className="block bg-white border rounded px-3 py-2 font-mono text-xs break-all">
-            {device.device_token}
-          </code>
-          <button onClick={() => navigate("/devices")} className="text-accent hover:underline mt-2 text-xs">
-            ← Back to devices
-          </button>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {device.featureFlags && (

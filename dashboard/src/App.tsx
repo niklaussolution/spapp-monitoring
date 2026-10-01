@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import DevicesListPage from "./pages/DevicesListPage";
 import DeviceDetailPage from "./pages/DeviceDetailPage";
+import DeviceArchivePage from "./pages/DeviceArchivePage";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
             <Route element={<Layout />}>
               <Route path="/devices" element={<DevicesListPage />} />
               <Route path="/devices/:id" element={<DeviceDetailPage />} />
+              <Route path="/devices/:id/archive" element={<DeviceArchivePage />} />
             </Route>
           </Route>
 
