@@ -14,7 +14,4 @@ interface SmsLogDao {
 
     @Query("DELETE FROM sms_log_entries WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
-
-    @Query("SELECT MAX(messageAtEpochMs) FROM sms_log_entries")
-    suspend fun getLatestTimestamp(): Long?
 }

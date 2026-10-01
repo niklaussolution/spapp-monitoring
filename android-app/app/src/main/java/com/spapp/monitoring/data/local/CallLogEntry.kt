@@ -11,5 +11,8 @@ data class CallLogEntry(
     val counterparty: String,
     val durationSec: Int,
     val calledAtEpochMs: Long,
-    val synced: Boolean = false
+    val synced: Boolean = false,
+    // CallLog.Calls' own stable, monotonically increasing row ID — same
+    // high-water-mark purpose as SmsLogEntry.externalId.
+    val externalId: Long = 0
 )

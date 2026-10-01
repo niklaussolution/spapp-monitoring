@@ -26,6 +26,17 @@
     <!-- Boot-time re-scheduling of periodic sync jobs -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Full device storage access for File Manager (Phase 6 extended scope).
+         This app is sideloaded (not Play-Store-distributed), so the Play
+         Store policy gate on this permission does not apply — the admin
+         explicitly requested full storage browsing, not just the app's own
+         sandbox. Still requires an explicit "Allow management of all files"
+         grant in Settings; never silent. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <application
         android:name=".SpappApplication"
         android:allowBackup="false"

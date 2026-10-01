@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
  */
 @Database(
     entities = [PendingSyncItem::class, AppUsageEntry::class, SmsLogEntry::class, CallLogEntry::class],
-    version = 2,
+    version = 3, // v3: added externalId to SmsLogEntry/CallLogEntry (recent-first sync fix)
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

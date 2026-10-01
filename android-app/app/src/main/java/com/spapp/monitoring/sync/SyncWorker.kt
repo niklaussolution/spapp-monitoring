@@ -242,10 +242,17 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     }
 
     private suspend fun syncSmsLog(bearer: String, db: AppDatabase) {
+        val state = DeviceState(applicationContext)
         val collector = SmsLogCollector(applicationContext)
-        val since = db.smsLogDao().getLatestTimestamp() ?: 0L
-        val fresh = collector.collectSince(since)
-        if (fresh.isNotEmpty()) db.smsLogDao().insertAll(fresh)
+        // High-water mark by content-provider row ID, not timestamp — see
+        // DeviceState.smsLastExternalId and SmsLogCollector's doc comment.
+        // -1 (never synced) bootstraps with the most recent 100 messages
+        // instead of the device's entire historical backlog.
+        val fresh = collector.collectSince(state.smsLastExternalId)
+        if (fresh.isNotEmpty()) {
+            db.smsLogDao().insertAll(fresh)
+            state.smsLastExternalId = maxOf(state.smsLastExternalId, fresh.maxOf { it.externalId })
+        }
 
         val unsynced = db.smsLogDao().getUnsynced()
         if (unsynced.isEmpty()) return
@@ -264,10 +271,13 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     }
 
     private suspend fun syncCallLog(bearer: String, db: AppDatabase) {
+        val state = DeviceState(applicationContext)
         val collector = CallLogCollector(applicationContext)
-        val since = db.callLogDao().getLatestTimestamp() ?: 0L
-        val fresh = collector.collectSince(since)
-        if (fresh.isNotEmpty()) db.callLogDao().insertAll(fresh)
+        val fresh = collector.collectSince(state.callLastExternalId)
+        if (fresh.isNotEmpty()) {
+            db.callLogDao().insertAll(fresh)
+            state.callLastExternalId = maxOf(state.callLastExternalId, fresh.maxOf { it.externalId })
+        }
 
         val unsynced = db.callLogDao().getUnsynced()
         if (unsynced.isEmpty()) return

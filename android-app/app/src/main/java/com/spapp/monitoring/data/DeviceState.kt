@@ -27,9 +27,25 @@ class DeviceState(context: Context) {
     val isActivated: Boolean
         get() = consentGiven && !authToken.isNullOrEmpty()
 
+    /**
+     * High-water marks (content provider row IDs) for SMS/call log sync —
+     * see SmsLogEntry/CallLogEntry.externalId. -1 means "never synced yet,
+     * do an initial most-recent-N bootstrap" rather than "catch up from the
+     * very first message/call the device ever had".
+     */
+    var smsLastExternalId: Long
+        get() = prefs.getLong(KEY_SMS_LAST_EXTERNAL_ID, -1L)
+        set(value) = prefs.edit { putLong(KEY_SMS_LAST_EXTERNAL_ID, value) }
+
+    var callLastExternalId: Long
+        get() = prefs.getLong(KEY_CALL_LAST_EXTERNAL_ID, -1L)
+        set(value) = prefs.edit { putLong(KEY_CALL_LAST_EXTERNAL_ID, value) }
+
     companion object {
         private const val KEY_CONSENT_GIVEN = "consent_given"
         private const val KEY_AUTH_TOKEN = "auth_token"
         private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_SMS_LAST_EXTERNAL_ID = "sms_last_external_id"
+        private const val KEY_CALL_LAST_EXTERNAL_ID = "call_last_external_id"
     }
 }

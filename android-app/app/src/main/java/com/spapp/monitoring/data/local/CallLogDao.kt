@@ -14,7 +14,4 @@ interface CallLogDao {
 
     @Query("DELETE FROM call_log_entries WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
-
-    @Query("SELECT MAX(calledAtEpochMs) FROM call_log_entries")
-    suspend fun getLatestTimestamp(): Long?
 }

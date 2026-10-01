@@ -2,9 +2,12 @@ package com.spapp.monitoring.ui
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.firebase.messaging.FirebaseMessaging
@@ -68,6 +71,15 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
 
+        binding.btnGrantFileAccess.setOnClickListener {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
+        }
+
         // Debug/dev convenience only — production relies on the periodic
         // WorkManager schedule and FCM-triggered on-demand commands, not a
         // user-visible manual sync button.
@@ -86,9 +98,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun uploadCurrentFcmToken() {
-        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-            FcmTokenSync.enqueueUpload(applicationContext, token)
-        }
+        // Previously had no failure handling or logging at all — if Play
+        // Services wasn't ready yet (common on first launch, and on some
+        // OEM ROMs like MIUI where Play Services init is delayed/throttled),
+        // this failed completely silently and the device never got an FCM
+        // token registered, permanently falling back to poll-only delivery.
+        FirebaseMessaging.getInstance().token
+            .addOnSuccessListener { token ->
+                Log.d(TAG, "FCM token fetched: $token")
+                FcmTokenSync.enqueueUpload(applicationContext, token)
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "FCM token fetch failed", e)
+            }
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
     }
 
     private fun refreshPermissionButtons() {
@@ -105,5 +131,9 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnEnableAppBlocking.visibility =
             if (AccessibilityStatus.isEnabled(this)) android.view.View.GONE else android.view.View.VISIBLE
+
+        val hasFullFileAccess = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+        binding.btnGrantFileAccess.visibility =
+            if (hasFullFileAccess) android.view.View.GONE else android.view.View.VISIBLE
     }
 }

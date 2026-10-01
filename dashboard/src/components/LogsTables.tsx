@@ -2,6 +2,11 @@ import { useEffect, useState } from "react";
 import { devicesApi } from "../api/devices";
 import type { CallLogEntry, SmsLogEntry } from "../api/types";
 
+// Contained scroll area so up to 100 rows stay inside the card instead of
+// growing the whole dashboard page ("page down" scrolling) — same pattern
+// as the other cards (Location History, Installed Apps).
+const SCROLL_CLASS = "max-h-80 overflow-y-auto";
+
 export default function LogsTables({ deviceId }: { deviceId: string }) {
   const [tab, setTab] = useState<"calls" | "sms">("calls");
   const [calls, setCalls] = useState<CallLogEntry[]>([]);
@@ -23,50 +28,54 @@ export default function LogsTables({ deviceId }: { deviceId: string }) {
         (calls.length === 0 ? (
           <p className="text-xs text-gray-400">No call log data synced yet.</p>
         ) : (
-          <table className="w-full text-xs">
-            <thead className="text-gray-400 text-left">
-              <tr>
-                <th className="py-1 font-medium">Number</th>
-                <th className="py-1 font-medium">Direction</th>
-                <th className="py-1 font-medium">Duration</th>
-                <th className="py-1 font-medium">Time</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {calls.map((c, i) => (
-                <tr key={i}>
-                  <td className="py-1.5 font-mono">{c.counterparty}</td>
-                  <td className="py-1.5">{c.direction}</td>
-                  <td className="py-1.5">{c.duration_sec}s</td>
-                  <td className="py-1.5 text-gray-500">{new Date(c.called_at).toLocaleString()}</td>
+          <div className={SCROLL_CLASS}>
+            <table className="w-full text-xs">
+              <thead className="text-gray-400 text-left sticky top-0 bg-white">
+                <tr>
+                  <th className="py-1 font-medium">Number</th>
+                  <th className="py-1 font-medium">Direction</th>
+                  <th className="py-1 font-medium">Duration</th>
+                  <th className="py-1 font-medium">Time</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y">
+                {calls.map((c, i) => (
+                  <tr key={i}>
+                    <td className="py-1.5 font-mono">{c.counterparty}</td>
+                    <td className="py-1.5">{c.direction}</td>
+                    <td className="py-1.5">{c.duration_sec}s</td>
+                    <td className="py-1.5 text-gray-500">{new Date(c.called_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ))}
 
       {tab === "sms" &&
         (sms.length === 0 ? (
           <p className="text-xs text-gray-400">No SMS log data synced yet.</p>
         ) : (
-          <table className="w-full text-xs">
-            <thead className="text-gray-400 text-left">
-              <tr>
-                <th className="py-1 font-medium">Number</th>
-                <th className="py-1 font-medium">Direction</th>
-                <th className="py-1 font-medium">Time</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {sms.map((s, i) => (
-                <tr key={i}>
-                  <td className="py-1.5 font-mono">{s.counterparty}</td>
-                  <td className="py-1.5">{s.direction}</td>
-                  <td className="py-1.5 text-gray-500">{new Date(s.message_at).toLocaleString()}</td>
+          <div className={SCROLL_CLASS}>
+            <table className="w-full text-xs">
+              <thead className="text-gray-400 text-left sticky top-0 bg-white">
+                <tr>
+                  <th className="py-1 font-medium">Number</th>
+                  <th className="py-1 font-medium">Direction</th>
+                  <th className="py-1 font-medium">Time</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y">
+                {sms.map((s, i) => (
+                  <tr key={i}>
+                    <td className="py-1.5 font-mono">{s.counterparty}</td>
+                    <td className="py-1.5">{s.direction}</td>
+                    <td className="py-1.5 text-gray-500">{new Date(s.message_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ))}
     </div>
   );
