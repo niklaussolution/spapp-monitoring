@@ -31,6 +31,12 @@ interface ApiService {
         @Body request: CallLogSyncRequest
     ): Response<SyncCountResponse>
 
+    @POST("api/sync/web-history")
+    suspend fun syncWebHistory(
+        @Header("Authorization") bearer: String,
+        @Body request: WebHistorySyncRequest
+    ): Response<SyncCountResponse>
+
     @POST("api/sync/installed-apps")
     suspend fun syncInstalledApps(
         @Header("Authorization") bearer: String,

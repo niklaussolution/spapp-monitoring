@@ -6,6 +6,7 @@ import LocationCard from "../components/LocationCard";
 import AppUsageChart from "../components/AppUsageChart";
 import LogsTables from "../components/LogsTables";
 import InstalledAppsCard from "../components/InstalledAppsCard";
+import WebHistoryCard from "../components/WebHistoryCard";
 import AlertsCard from "../components/AlertsCard";
 
 /**
@@ -80,6 +81,7 @@ export default function DeviceArchivePage() {
         <LocationCard deviceId={id} />
         <AppUsageChart deviceId={id} />
         <InstalledAppsCard deviceId={id} />
+        <WebHistoryCard deviceId={id} />
         <AlertsCard deviceId={id} />
 
         <div className="lg:col-span-2">

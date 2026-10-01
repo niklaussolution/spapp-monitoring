@@ -11,6 +11,7 @@ import type {
   LocationPoint,
   RemoteCommand,
   SmsLogEntry,
+  WebHistoryEntry,
 } from "./types";
 
 export const devicesApi = {
@@ -48,6 +49,9 @@ export const devicesApi = {
   smsLog: (id: string) => apiClient.get<SmsLogEntry[]>(`/api/devices/${id}/sms-log`).then((r) => r.data),
 
   callLog: (id: string) => apiClient.get<CallLogEntry[]>(`/api/devices/${id}/call-log`).then((r) => r.data),
+
+  webHistory: (id: string) =>
+    apiClient.get<WebHistoryEntry[]>(`/api/devices/${id}/web-history`).then((r) => r.data),
 
   installedApps: (id: string) =>
     apiClient.get<InstalledApp[]>(`/api/devices/${id}/installed-apps`).then((r) => r.data),

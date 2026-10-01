@@ -58,6 +58,13 @@ data class CallLogEntryDto(
 )
 data class CallLogSyncRequest(val entries: List<CallLogEntryDto>)
 
+data class WebHistoryEntryDto(
+    val url: String,
+    val title: String?,
+    val visitedAt: String // ISO-8601
+)
+data class WebHistorySyncRequest(val entries: List<WebHistoryEntryDto>)
+
 data class InstalledAppDto(
     val packageName: String,
     val appName: String?,

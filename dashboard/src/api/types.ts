@@ -27,6 +27,7 @@ export interface AdminDeviceSummary {
   created_at: string;
   counts: {
     location_count: number;
+    web_history_count: number;
     sms_count: number;
     call_count: number;
     app_usage_count: number;
@@ -75,6 +76,12 @@ export interface SmsLogEntry {
   direction: string;
   counterparty: string;
   message_at: string;
+}
+
+export interface WebHistoryEntry {
+  url: string;
+  title: string | null;
+  visited_at: string;
 }
 
 export interface CallLogEntry {

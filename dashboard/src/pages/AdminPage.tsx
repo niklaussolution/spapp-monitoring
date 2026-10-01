@@ -110,6 +110,7 @@ export default function AdminPage() {
                           <th className="py-1 font-medium">Device</th>
                           <th className="py-1 font-medium">Status</th>
                           <th className="py-1 font-medium">Location</th>
+                          <th className="py-1 font-medium">Web</th>
                           <th className="py-1 font-medium">SMS</th>
                           <th className="py-1 font-medium">Calls</th>
                           <th className="py-1 font-medium">App usage</th>
@@ -123,6 +124,7 @@ export default function AdminPage() {
                             <td className="py-1.5">{d.device_label}</td>
                             <td className="py-1.5">{d.status}</td>
                             <td className="py-1.5">{d.counts.location_count}</td>
+                            <td className="py-1.5">{d.counts.web_history_count}</td>
                             <td className="py-1.5">{d.counts.sms_count}</td>
                             <td className="py-1.5">{d.counts.call_count}</td>
                             <td className="py-1.5">{d.counts.app_usage_count}</td>

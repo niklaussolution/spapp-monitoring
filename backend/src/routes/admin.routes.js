@@ -60,6 +60,7 @@ router.get("/tenants/:tenantId/devices", async (req, res, next) => {
       `SELECT
          d.id AS device_id,
          (SELECT COUNT(*) FROM location_logs WHERE device_id = d.id)::int AS location_count,
+         (SELECT COUNT(*) FROM web_history_logs WHERE device_id = d.id)::int AS web_history_count,
          (SELECT COUNT(*) FROM sms_logs WHERE device_id = d.id)::int AS sms_count,
          (SELECT COUNT(*) FROM call_logs WHERE device_id = d.id)::int AS call_count,
          (SELECT COUNT(*) FROM app_usage_logs WHERE device_id = d.id)::int AS app_usage_count,

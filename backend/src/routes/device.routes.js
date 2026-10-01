@@ -310,6 +310,27 @@ router.get("/:id/sms-log", requireAuth, async (req, res, next) => {
 });
 
 /**
+ * GET /api/devices/:id/web-history
+ */
+router.get("/:id/web-history", requireAuth, async (req, res, next) => {
+  try {
+    const ownsDevice = await pool.query(
+      "SELECT id FROM devices WHERE id = $1 AND tenant_id = $2",
+      [req.params.id, req.auth.tenantId]
+    );
+    if (ownsDevice.rows.length === 0) return res.status(404).json({ error: "Device not found" });
+
+    const result = await pool.query(
+      "SELECT url, title, visited_at FROM web_history_logs WHERE device_id = $1 ORDER BY visited_at DESC LIMIT 100",
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/devices/:id/call-log
  */
 router.get("/:id/call-log", requireAuth, async (req, res, next) => {
