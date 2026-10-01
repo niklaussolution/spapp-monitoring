@@ -60,6 +60,7 @@ export interface InstalledApp {
   package_name: string;
   app_name: string | null;
   install_date: string | null;
+  icon_base64: string | null;
   synced_at: string;
 }
 

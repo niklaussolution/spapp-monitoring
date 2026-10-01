@@ -300,7 +300,7 @@ router.get("/:id/installed-apps", requireAuth, async (req, res, next) => {
     if (ownsDevice.rows.length === 0) return res.status(404).json({ error: "Device not found" });
 
     const result = await pool.query(
-      "SELECT package_name, app_name, install_date, synced_at FROM installed_apps WHERE device_id = $1 ORDER BY app_name",
+      "SELECT package_name, app_name, install_date, icon_base64, synced_at FROM installed_apps WHERE device_id = $1 ORDER BY app_name",
       [req.params.id]
     );
     res.json(result.rows);

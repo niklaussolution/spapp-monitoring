@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { devicesApi } from "../api/devices";
+import { downloadFileViaRelay } from "../api/fileDownload";
 
 interface FileEntryDtoLocal {
   name: string;
@@ -24,8 +25,8 @@ export default function RemoteActionsCard({
 }) {
   const [status, setStatus] = useState<string | null>(null);
   const [files, setFiles] = useState<FileEntryDtoLocal[] | null>(null);
-  const [currentPath, setCurrentPath] = useState("");
   const [fileListLoading, setFileListLoading] = useState(false);
+  const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
 
   async function pollCommand(commandId: string, label: string) {
     setStatus(`${label}: waiting for device...`);
@@ -58,31 +59,39 @@ export default function RemoteActionsCard({
     await pollCommand(cmd.id, "Lock device");
   }
 
-  async function loadFileList(path: string) {
+  /** One click fetches the WHOLE device storage tree recursively — no per-folder navigation. */
+  async function handleFileList() {
     setFileListLoading(true);
+    setFiles(null);
     setStatus(null);
     try {
-      const cmd = await devicesApi.createCommand(deviceId, "file_list", path ? { path } : undefined);
+      const cmd = await devicesApi.createCommand(deviceId, "file_list");
       const result = await pollCommand(cmd.id, "File list");
       if (result?.status === "acked") {
         const full = await devicesApi.getCommand(deviceId, cmd.id);
         setFiles((full.result?.files as FileEntryDtoLocal[]) || []);
-        setCurrentPath(path);
       }
     } finally {
       setFileListLoading(false);
     }
   }
 
-  function handleEntryClick(entry: FileEntryDtoLocal) {
-    if (entry.isDirectory) {
-      loadFileList(entry.path);
+  async function handleDownload(file: FileEntryDtoLocal) {
+    setDownloadingPath(file.path);
+    setStatus(`Preparing download: ${file.name}...`);
+    try {
+      const cmd = await devicesApi.createCommand(deviceId, "file_download", { path: file.path });
+      // Connect to the relay right away — the admin side must be listening
+      // before (or very shortly after) the device starts streaming.
+      const downloadPromise = downloadFileViaRelay(cmd.id, (s) => setStatus(s));
+      await pollCommand(cmd.id, `Download: ${file.name}`);
+      await downloadPromise;
+      setStatus(`Downloaded ${file.name}.`);
+    } catch (e) {
+      setStatus(`Download failed: ${(e as Error).message}`);
+    } finally {
+      setDownloadingPath(null);
     }
-  }
-
-  function handleUpClick() {
-    const parent = currentPath.split("/").slice(0, -1).join("/");
-    loadFileList(parent);
   }
 
   return (
@@ -91,44 +100,44 @@ export default function RemoteActionsCard({
       <div className="flex flex-wrap gap-2 mb-3">
         <ActionButton onClick={handleLocationCheck} label="Check Location Now" />
         <ActionButton onClick={handleLock} label="Lock Device" />
-        <ActionButton onClick={() => loadFileList("")} label="List Files" loading={fileListLoading} />
+        <ActionButton onClick={handleFileList} label="List Files" loading={fileListLoading} />
       </div>
       {status && <p className="text-xs text-gray-500 mb-3">{status}</p>}
 
       {files && (
-        <div>
-          <div className="flex items-center gap-2 text-xs text-gray-500 mb-1 px-1">
-            {currentPath && (
-              <button onClick={handleUpClick} className="text-accent hover:underline">
-                ⬆ Up
-              </button>
-            )}
-            <span className="font-mono truncate">/{currentPath}</span>
-          </div>
-          <div className="border rounded max-h-80 overflow-y-auto">
-            {files.length === 0 ? (
-              <p className="text-xs text-gray-400 p-3">Empty folder.</p>
-            ) : (
-              <table className="w-full text-xs">
-                <tbody className="divide-y">
-                  {files.map((f) => (
-                    <tr
-                      key={f.path}
-                      onClick={() => handleEntryClick(f)}
-                      className={f.isDirectory ? "cursor-pointer hover:bg-gray-50" : ""}
-                    >
-                      <td className="px-3 py-2">
+        <div className="border rounded max-h-96 overflow-y-auto">
+          {files.length === 0 ? (
+            <p className="text-xs text-gray-400 p-3">No files found.</p>
+          ) : (
+            <table className="w-full text-xs">
+              <tbody className="divide-y">
+                {files.map((f) => {
+                  const depth = f.path.split("/").length - 1;
+                  return (
+                    <tr key={f.path}>
+                      <td className="px-3 py-1.5" style={{ paddingLeft: `${12 + depth * 16}px` }}>
                         {f.isDirectory ? "📁" : "📄"} {f.name}
                       </td>
-                      <td className="px-3 py-2 text-gray-500 text-right">
+                      <td className="px-3 py-1.5 text-gray-500 text-right whitespace-nowrap">
                         {f.sizeBytes != null ? formatSize(f.sizeBytes) : ""}
                       </td>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                        {!f.isDirectory && (
+                          <button
+                            onClick={() => handleDownload(f)}
+                            disabled={downloadingPath === f.path}
+                            className="text-accent hover:underline disabled:opacity-50 disabled:cursor-wait"
+                          >
+                            {downloadingPath === f.path ? "..." : "Download"}
+                          </button>
+                        )}
+                      </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </div>

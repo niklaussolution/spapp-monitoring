@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { devicesApi } from "../api/devices";
 import type { FeatureFlags } from "../api/types";
 
@@ -14,6 +15,8 @@ const FLAG_LABELS: Record<keyof Omit<FeatureFlags, "device_id" | "updated_at">, 
   installed_apps_list: "Installed apps list",
 };
 
+type FlagKey = keyof typeof FLAG_LABELS;
+
 export default function FeatureFlagsCard({
   deviceId,
   flags,
@@ -23,16 +26,82 @@ export default function FeatureFlagsCard({
   flags: FeatureFlags;
   onUpdated: (flags: FeatureFlags) => void;
 }) {
-  async function toggle(key: keyof typeof FLAG_LABELS) {
+  // "pending" = saved, waiting for the device's next sync to pick it up.
+  // "confirmed" = the device has synced at least once since the toggle —
+  // shown as a checkmark for a few seconds, then cleared.
+  const [pending, setPending] = useState<Set<FlagKey>>(new Set());
+  const [confirmed, setConfirmed] = useState<Set<FlagKey>>(new Set());
+  const pollTimers = useRef<Record<string, number>>({});
+
+  async function toggle(key: FlagKey) {
     const updated = await devicesApi.updateFeatureFlags(deviceId, { [key]: !flags[key] });
     onUpdated(updated);
+    confirmDeviceSync(key);
+  }
+
+  /**
+   * Feature flags aren't a "command" the device acks — it just picks up
+   * whatever's current on its next periodic sync. So "confirmed" here means
+   * "the device has synced (last_seen_at advanced) at least once since this
+   * toggle" — a real signal the device is alive and has had a chance to
+   * pick up the change, not a guess.
+   */
+  function confirmDeviceSync(key: FlagKey) {
+    setPending((s) => new Set(s).add(key));
+    setConfirmed((s) => {
+      const next = new Set(s);
+      next.delete(key);
+      return next;
+    });
+
+    const toggledAt = Date.now();
+    let attempts = 0;
+
+    const poll = async () => {
+      attempts++;
+      try {
+        const device = await devicesApi.get(deviceId);
+        const lastSeen = device.last_seen_at ? new Date(device.last_seen_at).getTime() : 0;
+        if (lastSeen > toggledAt) {
+          setPending((s) => {
+            const next = new Set(s);
+            next.delete(key);
+            return next;
+          });
+          setConfirmed((s) => new Set(s).add(key));
+          window.setTimeout(() => {
+            setConfirmed((s) => {
+              const next = new Set(s);
+              next.delete(key);
+              return next;
+            });
+          }, 5000);
+          return;
+        }
+      } catch {
+        // Keep polling — a transient network error shouldn't stop the attempt count.
+      }
+
+      if (attempts < 8) {
+        pollTimers.current[key] = window.setTimeout(poll, 4000);
+      } else {
+        setPending((s) => {
+          const next = new Set(s);
+          next.delete(key);
+          return next;
+        });
+      }
+    };
+
+    window.clearTimeout(pollTimers.current[key]);
+    pollTimers.current[key] = window.setTimeout(poll, 4000);
   }
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-5">
       <h2 className="font-semibold text-sm mb-4">Feature Scope</h2>
       <div className="grid grid-cols-2 gap-3">
-        {(Object.keys(FLAG_LABELS) as Array<keyof typeof FLAG_LABELS>).map((key) => (
+        {(Object.keys(FLAG_LABELS) as FlagKey[]).map((key) => (
           <label key={key} className="flex items-center gap-2 text-sm cursor-pointer select-none">
             <input
               type="checkbox"
@@ -41,6 +110,16 @@ export default function FeatureFlagsCard({
               className="rounded accent-primary"
             />
             {FLAG_LABELS[key]}
+            {pending.has(key) && (
+              <span className="text-gray-300 text-xs" title="Waiting for the device to sync...">
+                ⏳
+              </span>
+            )}
+            {confirmed.has(key) && (
+              <span className="text-green-600 text-xs" title="Device has synced since this change">
+                ✓
+              </span>
+            )}
           </label>
         ))}
       </div>

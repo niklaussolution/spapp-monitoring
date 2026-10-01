@@ -188,11 +188,12 @@ router.post(
         await client.query("BEGIN");
         for (const app of req.body.apps) {
           await client.query(
-            `INSERT INTO installed_apps (device_id, package_name, app_name, install_date, synced_at)
-             VALUES ($1, $2, $3, $4, now())
+            `INSERT INTO installed_apps (device_id, package_name, app_name, install_date, icon_base64, synced_at)
+             VALUES ($1, $2, $3, $4, $5, now())
              ON CONFLICT (device_id, package_name)
-             DO UPDATE SET app_name = EXCLUDED.app_name, install_date = EXCLUDED.install_date, synced_at = now()`,
-            [req.device.deviceId, app.packageName, app.appName || null, app.installDate || null]
+             DO UPDATE SET app_name = EXCLUDED.app_name, install_date = EXCLUDED.install_date,
+                            icon_base64 = EXCLUDED.icon_base64, synced_at = now()`,
+            [req.device.deviceId, app.packageName, app.appName || null, app.installDate || null, app.iconBase64 || null]
           );
         }
         await client.query("COMMIT");

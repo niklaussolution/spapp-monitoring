@@ -2,6 +2,9 @@ import axios from "axios";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
+// Same-origin WebSocket base for the file-transfer relay (backend/src/ws/fileRelay.js).
+export const WS_BASE_URL = API_BASE_URL.replace(/^http/, "ws");
+
 export const apiClient = axios.create({ baseURL: API_BASE_URL });
 
 apiClient.interceptors.request.use((config) => {

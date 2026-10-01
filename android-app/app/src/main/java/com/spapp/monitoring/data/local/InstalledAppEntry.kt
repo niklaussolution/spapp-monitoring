@@ -8,5 +8,7 @@ package com.spapp.monitoring.data.local
 data class InstalledAppEntry(
     val packageName: String,
     val appName: String?,
-    val installDateEpochMs: Long?
+    val installDateEpochMs: Long?,
+    /** Small (48x48) PNG icon, base64-encoded — null if it couldn't be rendered. */
+    val iconBase64: String?
 )

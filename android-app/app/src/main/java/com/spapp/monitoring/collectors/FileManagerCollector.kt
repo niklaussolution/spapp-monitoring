@@ -67,6 +67,59 @@ class FileManagerCollector(private val context: Context) {
         emptyList()
     }
 
+    /**
+     * Walks the entire storage tree in one pass (breadth-first, so a huge
+     * single branch can't starve the rest) instead of requiring the admin to
+     * click into one folder at a time — the dashboard no longer does
+     * per-folder navigation commands. Capped at [maxEntries] so a phone with
+     * tens of thousands of media files doesn't produce an unbounded payload;
+     * once the cap is hit, remaining directories are simply not descended
+     * into (the admin still sees what was found so far).
+     */
+    fun listAllRecursive(maxEntries: Int = 3000): List<FileEntryDto> {
+        val root = try {
+            root().canonicalFile
+        } catch (e: Exception) {
+            return emptyList()
+        }
+        if (!root.exists() || !root.isDirectory) return emptyList()
+
+        val results = mutableListOf<FileEntryDto>()
+        val queue = ArrayDeque<File>()
+        queue.add(root)
+
+        while (queue.isNotEmpty() && results.size < maxEntries) {
+            val dir = queue.removeFirst()
+            val children = try {
+                dir.listFiles()
+            } catch (e: Exception) {
+                null
+            } ?: continue
+
+            for (file in children) {
+                if (results.size >= maxEntries) break
+                try {
+                    val canonical = file.canonicalFile
+                    if (!canonical.path.startsWith(root.path)) continue // path traversal / symlink-escape guard
+
+                    results += FileEntryDto(
+                        name = file.name,
+                        path = canonical.relativeTo(root).path,
+                        isDirectory = file.isDirectory,
+                        sizeBytes = if (file.isFile) file.length() else null,
+                        mimeType = if (file.isFile) guessMimeType(file.extension) else null
+                    )
+                    if (file.isDirectory) queue.add(file)
+                } catch (e: Exception) {
+                    // Skip just this entry (OEM-specific permission quirk on one
+                    // file/dir) rather than failing the whole walk.
+                }
+            }
+        }
+
+        return results.sortedWith(compareBy({ it.path.count { c -> c == '/' } }, { !it.isDirectory }, { it.path }))
+    }
+
     fun resolveFile(relativePath: String): File? = try {
         val root = root().canonicalFile
         val target = File(root, relativePath)

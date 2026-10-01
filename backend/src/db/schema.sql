@@ -152,6 +152,10 @@ CREATE TABLE IF NOT EXISTS installed_apps (
   synced_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (device_id, package_name)
 );
+-- Added after the table already existed in production — CREATE TABLE IF NOT
+-- EXISTS above is a no-op once the table is there, so the column needs its
+-- own idempotent statement to actually reach an already-deployed database.
+ALTER TABLE installed_apps ADD COLUMN IF NOT EXISTS icon_base64 TEXT;
 
 -- ------------------------------------------------------------
 -- App / website blocking rules.

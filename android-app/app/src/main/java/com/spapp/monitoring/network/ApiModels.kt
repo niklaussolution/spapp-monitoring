@@ -61,7 +61,8 @@ data class CallLogSyncRequest(val entries: List<CallLogEntryDto>)
 data class InstalledAppDto(
     val packageName: String,
     val appName: String?,
-    val installDate: String? // ISO-8601
+    val installDate: String?, // ISO-8601
+    val iconBase64: String?
 )
 data class InstalledAppsSyncRequest(val apps: List<InstalledAppDto>)
 

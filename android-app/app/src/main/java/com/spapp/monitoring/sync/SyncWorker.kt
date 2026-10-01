@@ -146,9 +146,13 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         // Wrapping the whole thing — previously an uncaught exception here (or
         // in FileManagerCollector) crashed the entire SyncWorker run, silently
         // skipping every command still left in the batch, not just this one.
+        //
+        // Full recursive walk in one shot (listAllRecursive), not a single
+        // directory level — the dashboard no longer sends a per-folder "path"
+        // to page into one level at a time; it shows the whole tree from one
+        // List Files click.
         try {
-            val path = command.payload?.get("path") as? String
-            val files = FileManagerCollector(applicationContext).listFiles(path)
+            val files = FileManagerCollector(applicationContext).listAllRecursive()
             ApiClient.service.ackCommand(bearer, command.id, AckCommandRequest(success = true, files = files))
         } catch (e: Exception) {
             // Retried next sync cycle.
@@ -305,7 +309,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             InstalledAppDto(
                 it.packageName,
                 it.appName,
-                it.installDateEpochMs?.let { ms -> Instant.ofEpochMilli(ms).toString() }
+                it.installDateEpochMs?.let { ms -> Instant.ofEpochMilli(ms).toString() },
+                it.iconBase64
             )
         }
         try {

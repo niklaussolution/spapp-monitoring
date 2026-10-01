@@ -15,11 +15,27 @@ export default function InstalledAppsCard({ deviceId }: { deviceId: string }) {
       {apps.length === 0 ? (
         <p className="text-xs text-gray-400">No inventory synced yet.</p>
       ) : (
-        <div className="max-h-64 overflow-y-auto space-y-1">
+        <div className="max-h-80 overflow-y-auto grid grid-cols-4 sm:grid-cols-5 gap-3">
           {apps.map((a) => (
-            <div key={a.package_name} className="flex justify-between text-xs py-1 border-b last:border-0">
-              <span>{a.app_name || a.package_name}</span>
-              <span className="text-gray-400 font-mono">{a.package_name}</span>
+            <div
+              key={a.package_name}
+              className="flex flex-col items-center text-center gap-1"
+              title={a.package_name}
+            >
+              {a.icon_base64 ? (
+                <img
+                  src={`data:image/png;base64,${a.icon_base64}`}
+                  alt=""
+                  className="w-9 h-9 rounded"
+                />
+              ) : (
+                <div className="w-9 h-9 rounded bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-400">
+                  {(a.app_name || a.package_name).charAt(0).toUpperCase()}
+                </div>
+              )}
+              <span className="text-[10px] leading-tight text-gray-600 line-clamp-2">
+                {a.app_name || a.package_name}
+              </span>
             </div>
           ))}
         </div>
