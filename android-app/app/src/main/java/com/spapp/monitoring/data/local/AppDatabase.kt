@@ -11,8 +11,11 @@ import androidx.room.RoomDatabase
  * backend succeeds. See docs — section "Local DB" rationale.
  */
 @Database(
-    entities = [PendingSyncItem::class, AppUsageEntry::class, SmsLogEntry::class, CallLogEntry::class],
-    version = 3, // v3: added externalId to SmsLogEntry/CallLogEntry (recent-first sync fix)
+    entities = [
+        PendingSyncItem::class, AppUsageEntry::class, SmsLogEntry::class, CallLogEntry::class,
+        WebHistoryEntry::class,
+    ],
+    version = 4, // v4: added WebHistoryEntry (accessibility-captured browser URLs)
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -20,6 +23,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appUsageDao(): AppUsageDao
     abstract fun smsLogDao(): SmsLogDao
     abstract fun callLogDao(): CallLogDao
+    abstract fun webHistoryDao(): WebHistoryDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null

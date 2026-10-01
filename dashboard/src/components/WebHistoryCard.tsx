@@ -3,9 +3,11 @@ import { devicesApi } from "../api/devices";
 import type { WebHistoryEntry } from "../api/types";
 
 /**
- * Best-effort — see android-app WebHistoryCollector's doc comment. Modern
- * Chrome doesn't expose a history API to third-party apps, so this stays
- * empty on most devices; that's a platform limitation, not a sync bug.
+ * Captured from the browser's address bar via the Accessibility Service
+ * (BlockAccessibilityService), not Chrome's history directly — modern
+ * Chrome exposes no history API to third-party apps at all. So this stays
+ * empty until that service is enabled on the device, in addition to the
+ * "Web history" feature flag being on.
  */
 export default function WebHistoryCard({ deviceId }: { deviceId: string }) {
   const [entries, setEntries] = useState<WebHistoryEntry[]>([]);
@@ -22,8 +24,10 @@ export default function WebHistoryCard({ deviceId }: { deviceId: string }) {
         <p className="text-xs text-gray-400">Loading...</p>
       ) : entries.length === 0 ? (
         <p className="text-xs text-gray-400">
-          No browsing history synced. Modern Chrome doesn't allow third-party apps to read its
-          history — this only picks up data on browsers with a legacy history provider.
+          No browsing history synced yet. On the device, under Accessibility settings, make sure
+          "Enable App/Website Blocking &amp; History" is turned on for Spapp Monitor — this
+          feature reads it from the browser's address bar, since modern Chrome itself doesn't
+          expose a history API to third-party apps.
         </p>
       ) : (
         <div className="max-h-80 overflow-y-auto">

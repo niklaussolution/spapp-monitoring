@@ -46,6 +46,18 @@ class DeviceState(context: Context) {
         get() = prefs.getLong(KEY_LAST_SYNC_AT, 0L)
         set(value) = prefs.edit { putLong(KEY_LAST_SYNC_AT, value) }
 
+    /**
+     * Mirrors the backend's web_history_tracking flag, refreshed on every
+     * SyncRunner pass. BlockAccessibilityService reads this directly (no
+     * network access from inside an accessibility callback) to decide
+     * whether to record the browser URL it just saw — defaults to false so
+     * nothing is captured until the admin has explicitly turned this on at
+     * least once.
+     */
+    var webHistoryTrackingEnabled: Boolean
+        get() = prefs.getBoolean(KEY_WEB_HISTORY_ENABLED, false)
+        set(value) = prefs.edit { putBoolean(KEY_WEB_HISTORY_ENABLED, value) }
+
     companion object {
         private const val KEY_CONSENT_GIVEN = "consent_given"
         private const val KEY_AUTH_TOKEN = "auth_token"
@@ -53,5 +65,6 @@ class DeviceState(context: Context) {
         private const val KEY_SMS_LAST_EXTERNAL_ID = "sms_last_external_id"
         private const val KEY_CALL_LAST_EXTERNAL_ID = "call_last_external_id"
         private const val KEY_LAST_SYNC_AT = "last_sync_at"
+        private const val KEY_WEB_HISTORY_ENABLED = "web_history_tracking_enabled"
     }
 }

@@ -30,15 +30,15 @@
     <string name="sync_now">Sync Now</string>
     <string name="grant_background_location">Grant Background Location (for Geofencing)</string>
     <string name="enable_remote_lock">Enable Remote Lock</string>
-    <string name="enable_app_blocking">Enable App/Website Blocking</string>
+    <string name="enable_app_blocking">Enable App/Website Blocking &amp; History</string>
     <string name="grant_file_access">Grant Full File Access</string>
     <string name="grant_battery_exemption">Allow Background Activity (recommended)</string>
     <string name="grant_autostart">Enable Autostart (required on Xiaomi/MIUI)</string>
     <string name="sync_status_never">Monitoring active. Waiting for first sync…</string>
     <string name="sync_status_last_synced">Monitoring active. Last synced %1$s.</string>
     <string name="accessibility_service_description">Lets the account administrator block selected apps and
-        websites during scheduled hours. Only checks which app is currently open (and, for
-        supported browsers, the address bar) — never reads message content or other on-screen
-        text.</string>
+        websites during scheduled hours, and record browsing history when that feature is turned
+        on. Only checks which app is currently open (and, for supported browsers, the address
+        bar) — never reads message content or other on-screen text.</string>
     <string name="block_screen_title">This app is blocked right now</string>
 </resources>

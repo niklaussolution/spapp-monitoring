@@ -4,31 +4,43 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.spapp.monitoring.data.DeviceState
+import com.spapp.monitoring.data.local.AppDatabase
+import com.spapp.monitoring.data.local.WebHistoryEntry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
 /**
- * Enforces app_blocking rules (Phase 7). Only inspects two things, per the
- * project's transparency principles: (1) which app's window just came to
- * the foreground — the same information Android's own Digital Wellbeing/
- * Family Link use — and (2), for app-level website rules, the visible
- * address-bar text of supported browsers. It never reads message content,
- * chat text, or any other on-screen content.
+ * Enforces app_blocking rules (Phase 7) and, when web_history_tracking is
+ * on, records the URLs it sees in a supported browser's address bar (Phase
+ * 10 — see WebHistoryEntry). Only inspects two things, per the project's
+ * transparency principles: (1) which app's window just came to the
+ * foreground — the same information Android's own Digital Wellbeing/Family
+ * Link use — and (2) the visible address-bar text of supported browsers.
+ * It never reads message content, chat text, or any other on-screen
+ * content. Both bullets are already listed in the on-device consent text
+ * ("Website browsing history", "Device lock and file listing on request").
  *
- * WEBSITE BLOCKING LIMITATION (documented, not an oversight — see
- * WebHistoryCollector for the same pattern): address-bar inspection only
- * works for browsers that expose a stable accessibility resource-id for
- * their URL bar. Chrome and a few others are supported below; an
- * unsupported or updated browser simply won't be blockable by domain,
- * while app-level blocking (blocking a browser entirely) still works
- * regardless.
+ * WHY ACCESSIBILITY, NOT A CONTENT PROVIDER QUERY: modern Chrome exposes no
+ * history API to third-party apps at all (removed from the public SDK years
+ * ago) — there is no supported way to read it without this. Address-bar
+ * inspection only works for browsers that expose a stable accessibility
+ * resource-id for their URL bar, listed below; an unsupported or updated
+ * browser simply won't be covered, for blocking or for history, while
+ * app-level blocking (blocking a browser entirely) still works regardless.
  */
 class BlockAccessibilityService : AccessibilityService() {
 
     private lateinit var rulesCache: BlockRulesCache
     private var lastBlockedPackage: String? = null
     private var lastBlockedAt = 0L
+    private var lastRecordedUrl: String? = null
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val browserUrlBarIds = setOf(
         "com.android.chrome:id/url_bar",
@@ -37,6 +49,7 @@ class BlockAccessibilityService : AccessibilityService() {
         "org.mozilla.firefox:id/mozac_browser_toolbar_url_view",
         "com.microsoft.emmx:id/url_bar",
     )
+    private val browserPackages = browserUrlBarIds.map { it.substringBefore(":id/") }.toSet()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -47,6 +60,14 @@ class BlockAccessibilityService : AccessibilityService() {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return // never block ourselves
+
+        // Web history recording is independent of block rules existing at
+        // all — it used to live inside the "rules.isEmpty() return" guard
+        // below, which meant no rules configured == no history ever
+        // recorded, even with the feature flag on.
+        if (packageName in browserPackages) {
+            recordUrlIfEnabled(rootInActiveWindow)
+        }
 
         if (!::rulesCache.isInitialized) rulesCache = BlockRulesCache(applicationContext)
         val rules = rulesCache.load()
@@ -71,6 +92,23 @@ class BlockAccessibilityService : AccessibilityService() {
         websiteRules.firstOrNull { rule ->
             rule.isActiveNow(dayAbbrev, minutesOfDay) && urlBarText.contains(rule.target, ignoreCase = true)
         }?.let { rule -> blockForeground(rule, urlBarText) }
+    }
+
+    private fun recordUrlIfEnabled(root: AccessibilityNodeInfo?) {
+        if (!DeviceState(applicationContext).webHistoryTrackingEnabled) return
+        val url = findUrlBarText(root) ?: return
+        if (url == lastRecordedUrl) return // debounce — same URL re-fires on scroll/focus events
+        lastRecordedUrl = url
+
+        scope.launch {
+            try {
+                AppDatabase.getInstance(applicationContext).webHistoryDao().insert(
+                    WebHistoryEntry(url = url, visitedAtEpochMs = System.currentTimeMillis())
+                )
+            } catch (e: Exception) {
+                // Dropped — not worth retrying a single missed URL capture.
+            }
+        }
     }
 
     private fun findUrlBarText(root: AccessibilityNodeInfo?): String? {

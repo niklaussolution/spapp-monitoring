@@ -57,11 +57,18 @@ class SyncRunner(private val context: Context) {
         val flags = flagsResponse.body()!!
         val db = AppDatabase.getInstance(context)
 
+        // Always mirrored locally (not just when true) — BlockAccessibilityService
+        // reads this flag directly to decide whether to record a URL it just
+        // saw, and it needs to stop recording immediately once the admin
+        // turns the flag off, the same way syncBlockRules() below always
+        // overwrites the local rules cache regardless of app_blocking.
+        state.webHistoryTrackingEnabled = flags.web_history_tracking
+
         if (flags.app_usage_tracking) {
             syncAppUsage(bearer, db)
         }
         if (flags.web_history_tracking) {
-            syncWebHistory(bearer)
+            syncWebHistory(bearer, db)
         }
         if (flags.sms_log) {
             syncSmsLog(bearer, db)
@@ -282,23 +289,31 @@ class SyncRunner(private val context: Context) {
     }
 
     /**
-     * Best-effort only — see WebHistoryCollector's doc comment. On a modern
-     * Chrome-only device this reliably collects nothing (no third-party
-     * history API exists), so unlike SMS/call logs there's no local buffer
-     * or high-water mark: each run just collects whatever's available right
-     * now and sends it. Re-sending overlapping entries on the rare
-     * legacy-browser device is harmless — there's no uniqueness constraint
-     * to violate, and the dashboard just shows a few duplicate rows.
+     * Two sources, merged: (1) the local Room buffer that
+     * BlockAccessibilityService fills by reading supported browsers'
+     * address bars — the real working mechanism, since modern Chrome
+     * exposes no history API to third-party apps at all — and (2)
+     * WebHistoryCollector's legacy content-provider query, kept as a
+     * secondary source for the rare OEM/legacy browser that still
+     * implements it. Buffered-and-deleted like SMS/call logs, not
+     * fire-and-forget, since source (1) can produce real volume.
      */
-    private suspend fun syncWebHistory(bearer: String) {
-        val entries = WebHistoryCollector(context).collectRecent()
-        if (entries.isEmpty()) return
+    private suspend fun syncWebHistory(bearer: String, db: AppDatabase) {
+        val unsynced = db.webHistoryDao().getUnsynced()
+        val legacy = WebHistoryCollector(context).collectRecent()
 
-        val dtos = entries.map {
+        val dtos = unsynced.map {
+            WebHistoryEntryDto(it.url, null, Instant.ofEpochMilli(it.visitedAtEpochMs).toString())
+        } + legacy.map {
             WebHistoryEntryDto(it.url, it.title, Instant.ofEpochMilli(it.visitedAtEpochMs).toString())
         }
+        if (dtos.isEmpty()) return
+
         try {
-            ApiClient.service.syncWebHistory(bearer, WebHistorySyncRequest(dtos))
+            val response = ApiClient.service.syncWebHistory(bearer, WebHistorySyncRequest(dtos))
+            if (response.isSuccessful && unsynced.isNotEmpty()) {
+                db.webHistoryDao().deleteByIds(unsynced.map { it.id })
+            }
         } catch (e: Exception) {
             // Retried on next scheduled run.
         }
