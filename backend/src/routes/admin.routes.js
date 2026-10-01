@@ -49,7 +49,8 @@ router.get("/tenants", async (req, res, next) => {
 router.get("/tenants/:tenantId/devices", async (req, res, next) => {
   try {
     const devices = await pool.query(
-      `SELECT id, device_label, status, platform, os_version, last_seen_at, created_at
+      `SELECT id, device_label, status, platform, os_version, last_seen_at, created_at,
+              (fcm_token IS NOT NULL) AS has_fcm_token
        FROM devices WHERE tenant_id = $1 ORDER BY created_at DESC`,
       [req.params.tenantId]
     );

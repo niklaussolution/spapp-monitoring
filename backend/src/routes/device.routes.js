@@ -4,6 +4,7 @@ const { body, validationResult } = require("express-validator");
 const pool = require("../db/pool");
 const { requireAuth } = require("../middleware/auth.middleware");
 const { generateDeviceToken } = require("../utils/tokens");
+const { sendSyncNudge } = require("../services/fcm.service");
 
 const router = express.Router();
 
@@ -108,12 +109,16 @@ router.get("/:id", requireAuth, async (req, res, next) => {
 
 /**
  * PATCH /api/devices/:id/feature-flags
- * (Admin, authenticated) Admin selects which agreed-scope features are active for this device.
+ * (Admin, authenticated) Admin selects which agreed-scope features are active
+ * for this device. Also sends an FCM wake-up push, same as a remote command
+ * — without this, a toggle just sat in Postgres until the device's next
+ * periodic sync (up to 15 minutes later) ever read it, which looked like the
+ * toggle silently doing nothing.
  */
 router.patch("/:id/feature-flags", requireAuth, async (req, res, next) => {
   try {
     const ownsDevice = await pool.query(
-      "SELECT id FROM devices WHERE id = $1 AND tenant_id = $2",
+      "SELECT id, fcm_token FROM devices WHERE id = $1 AND tenant_id = $2",
       [req.params.id, req.auth.tenantId]
     );
     if (ownsDevice.rows.length === 0) {
@@ -137,7 +142,8 @@ router.patch("/:id/feature-flags", requireAuth, async (req, res, next) => {
       values
     );
 
-    res.json(result.rows[0]);
+    const push = await sendSyncNudge(ownsDevice.rows[0].fcm_token);
+    res.json({ ...result.rows[0], push });
   } catch (err) {
     next(err);
   }
