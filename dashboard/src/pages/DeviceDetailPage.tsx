@@ -84,6 +84,7 @@ export default function DeviceDetailPage() {
           <FeatureFlagsCard
             deviceId={id}
             flags={device.featureFlags}
+            permissionStatus={device.permission_status}
             onUpdated={(flags) => setDevice({ ...device, featureFlags: flags })}
           />
         )}

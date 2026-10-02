@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { devicesApi } from "../api/devices";
 import type { InstalledApp } from "../api/types";
+import { usePolling } from "../hooks/usePolling";
+
+const AUTO_REFRESH_MS = 20000;
 
 export default function InstalledAppsCard({ deviceId }: { deviceId: string }) {
   const [apps, setApps] = useState<InstalledApp[]>([]);
 
-  useEffect(() => {
+  usePolling(() => {
     devicesApi.installedApps(deviceId).then(setApps);
-  }, [deviceId]);
+  }, AUTO_REFRESH_MS, [deviceId]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-5">

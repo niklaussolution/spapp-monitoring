@@ -36,23 +36,42 @@ CREATE TABLE IF NOT EXISTS devices (
 CREATE INDEX IF NOT EXISTS idx_devices_tenant ON devices(tenant_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_token ON devices(device_token);
 
+-- Latest OS-level permission grant snapshot (see PermissionStatusCollector,
+-- android-app) — one boolean per feature-flag scope, "is the underlying
+-- permission actually granted right now", independent of whether the admin
+-- has that scope turned on. Added after the table already existed, hence
+-- its own idempotent statement (see installed_apps.icon_base64 below for
+-- the same pattern).
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS permission_status JSONB;
+
 -- ------------------------------------------------------------
 -- Feature flags: per-device runtime toggles (admin-selectable scope).
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS feature_flags (
   device_id             UUID PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
   location_on_demand    BOOLEAN NOT NULL DEFAULT true,
-  geofencing            BOOLEAN NOT NULL DEFAULT false,
+  geofencing            BOOLEAN NOT NULL DEFAULT true,
   app_usage_tracking    BOOLEAN NOT NULL DEFAULT true,
-  web_history_tracking  BOOLEAN NOT NULL DEFAULT false,
-  app_blocking          BOOLEAN NOT NULL DEFAULT false,
-  sms_log               BOOLEAN NOT NULL DEFAULT false,
-  call_log              BOOLEAN NOT NULL DEFAULT false,
+  web_history_tracking  BOOLEAN NOT NULL DEFAULT true,
+  app_blocking          BOOLEAN NOT NULL DEFAULT true,
+  sms_log               BOOLEAN NOT NULL DEFAULT true,
+  call_log              BOOLEAN NOT NULL DEFAULT true,
   remote_lock           BOOLEAN NOT NULL DEFAULT true,
-  file_manager          BOOLEAN NOT NULL DEFAULT false,
+  file_manager          BOOLEAN NOT NULL DEFAULT true,
   installed_apps_list   BOOLEAN NOT NULL DEFAULT true,
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Table already exists in production (CREATE TABLE IF NOT EXISTS above is a
+-- no-op there), so the new default only takes effect for freshly-created
+-- devices once these are applied — same idempotent-statement pattern as
+-- installed_apps.icon_base64 further down.
+ALTER TABLE feature_flags ALTER COLUMN geofencing SET DEFAULT true;
+ALTER TABLE feature_flags ALTER COLUMN web_history_tracking SET DEFAULT true;
+ALTER TABLE feature_flags ALTER COLUMN app_blocking SET DEFAULT true;
+ALTER TABLE feature_flags ALTER COLUMN sms_log SET DEFAULT true;
+ALTER TABLE feature_flags ALTER COLUMN call_log SET DEFAULT true;
+ALTER TABLE feature_flags ALTER COLUMN file_manager SET DEFAULT true;
 
 -- ------------------------------------------------------------
 -- Location logs: only written on-demand (admin-triggered check) or geofence events.

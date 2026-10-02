@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { devicesApi } from "../api/devices";
-import type { FeatureFlags } from "../api/types";
+import type { FeatureFlags, PermissionStatus } from "../api/types";
 
 const FLAG_LABELS: Record<keyof Omit<FeatureFlags, "device_id" | "updated_at">, string> = {
   location_on_demand: "Location (on-demand)",
@@ -17,13 +17,29 @@ const FLAG_LABELS: Record<keyof Omit<FeatureFlags, "device_id" | "updated_at">, 
 
 type FlagKey = keyof typeof FLAG_LABELS;
 
+/** feature_flags column name -> PermissionStatus field name (snake_case -> camelCase). */
+const PERMISSION_KEYS: Record<FlagKey, keyof PermissionStatus> = {
+  location_on_demand: "locationOnDemand",
+  geofencing: "geofencing",
+  app_usage_tracking: "appUsageTracking",
+  web_history_tracking: "webHistoryTracking",
+  app_blocking: "appBlocking",
+  sms_log: "smsLog",
+  call_log: "callLog",
+  remote_lock: "remoteLock",
+  file_manager: "fileManager",
+  installed_apps_list: "installedAppsList",
+};
+
 export default function FeatureFlagsCard({
   deviceId,
   flags,
+  permissionStatus,
   onUpdated,
 }: {
   deviceId: string;
   flags: FeatureFlags;
+  permissionStatus?: PermissionStatus | null;
   onUpdated: (flags: FeatureFlags) => void;
 }) {
   // "pending" = saved, waiting for the device's next sync to pick it up.
@@ -101,28 +117,61 @@ export default function FeatureFlagsCard({
     <div className="bg-white rounded-lg shadow-sm p-5">
       <h2 className="font-semibold text-sm mb-4">Feature Scope</h2>
       <div className="grid grid-cols-2 gap-3">
-        {(Object.keys(FLAG_LABELS) as FlagKey[]).map((key) => (
-          <label key={key} className="flex items-center gap-2 text-sm cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={Boolean(flags[key])}
-              onChange={() => toggle(key)}
-              className="rounded accent-primary"
-            />
-            {FLAG_LABELS[key]}
-            {pending.has(key) && (
-              <span className="text-gray-300 text-xs" title="Waiting for the device to sync...">
-                ⏳
-              </span>
-            )}
-            {confirmed.has(key) && (
-              <span className="text-green-600 text-xs" title="Device has synced since this change">
-                ✓
-              </span>
-            )}
-          </label>
-        ))}
+        {(Object.keys(FLAG_LABELS) as FlagKey[]).map((key) => {
+          const granted = permissionStatus?.[PERMISSION_KEYS[key]];
+          return (
+            <div key={key} className="flex items-center gap-2 text-sm">
+              <ToggleSwitch checked={Boolean(flags[key])} onChange={() => toggle(key)} />
+              <span className="select-none">{FLAG_LABELS[key]}</span>
+
+              {granted === true && (
+                <span className="text-green-600 text-xs" title="Allowed on the target device">
+                  ✓
+                </span>
+              )}
+              {granted === false && (
+                <span
+                  className="text-amber-500 text-xs"
+                  title="Not allowed on the target device yet — grant the matching permission there"
+                >
+                  ⚠
+                </span>
+              )}
+
+              {pending.has(key) && (
+                <span className="text-gray-300 text-xs" title="Waiting for the device to sync...">
+                  ⏳
+                </span>
+              )}
+              {confirmed.has(key) && (
+                <span className="text-green-600 text-xs" title="Device has synced since this change">
+                  ✓
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
+  );
+}
+
+function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${
+        checked ? "bg-primary" : "bg-gray-300"
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+          checked ? "translate-x-4" : "translate-x-0.5"
+        }`}
+      />
+    </button>
   );
 }

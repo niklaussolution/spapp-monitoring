@@ -1,14 +1,17 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { devicesApi } from "../api/devices";
 import type { AppUsageEntry } from "../api/types";
+import { usePolling } from "../hooks/usePolling";
+
+const AUTO_REFRESH_MS = 20000;
 
 export default function AppUsageChart({ deviceId }: { deviceId: string }) {
   const [entries, setEntries] = useState<AppUsageEntry[]>([]);
 
-  useEffect(() => {
+  usePolling(() => {
     devicesApi.appUsage(deviceId).then(setEntries);
-  }, [deviceId]);
+  }, AUTO_REFRESH_MS, [deviceId]);
 
   const chartData = entries
     .slice()

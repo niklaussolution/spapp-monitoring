@@ -9,6 +9,7 @@ import com.spapp.monitoring.collectors.CallLogCollector
 import com.spapp.monitoring.collectors.FileManagerCollector
 import com.spapp.monitoring.collectors.InstalledAppsCollector
 import com.spapp.monitoring.collectors.LocationFetcher
+import com.spapp.monitoring.collectors.PermissionStatusCollector
 import com.spapp.monitoring.collectors.SmsLogCollector
 import com.spapp.monitoring.collectors.WebHistoryCollector
 import com.spapp.monitoring.data.DeviceState
@@ -63,6 +64,17 @@ class SyncRunner(private val context: Context) {
         // turns the flag off, the same way syncBlockRules() below always
         // overwrites the local rules cache regardless of app_blocking.
         state.webHistoryTrackingEnabled = flags.web_history_tracking
+
+        // Always sent, regardless of which flags are on — this is "can this
+        // feature actually work on this device right now", not "is it
+        // turned on", so the dashboard can show a real OS-level permission
+        // gap (e.g. Accessibility Service never enabled) even for a scope
+        // the admin hasn't toggled on yet.
+        try {
+            ApiClient.service.syncPermissionStatus(bearer, PermissionStatusCollector(context).collect())
+        } catch (e: Exception) {
+            // Retried on next scheduled run.
+        }
 
         if (flags.app_usage_tracking) {
             syncAppUsage(bearer, db)

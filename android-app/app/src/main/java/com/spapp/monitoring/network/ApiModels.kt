@@ -102,6 +102,19 @@ data class GeofenceDto(
 
 data class FcmTokenRequest(val fcmToken: String)
 
+data class PermissionStatusDto(
+    val locationOnDemand: Boolean,
+    val geofencing: Boolean,
+    val appUsageTracking: Boolean,
+    val webHistoryTracking: Boolean,
+    val appBlocking: Boolean,
+    val smsLog: Boolean,
+    val callLog: Boolean,
+    val remoteLock: Boolean,
+    val fileManager: Boolean,
+    val installedAppsList: Boolean
+)
+
 data class LockDeviceResult(val locked: Boolean)
 
 data class FileEntryDto(

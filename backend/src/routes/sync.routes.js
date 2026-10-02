@@ -259,6 +259,26 @@ router.post(
 );
 
 /**
+ * POST /api/sync/permission-status
+ * (Device) Reports whether the OS-level permission behind each feature-flag
+ * scope is actually granted right now — independent of whether that flag
+ * is turned on — so the dashboard can show a real "not granted on device"
+ * gap instead of a toggle that silently does nothing.
+ */
+router.post("/permission-status", async (req, res, next) => {
+  try {
+    await pool.query("UPDATE devices SET permission_status = $1 WHERE id = $2", [
+      JSON.stringify(req.body),
+      req.device.deviceId,
+    ]);
+    await touchLastSeen(req.device.deviceId);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/sync/commands
  * (Device) Fetches this device's pending remote commands and marks them 'sent'.
  * Phase 5: polled once per sync cycle (and on-demand via "Check Location Now"

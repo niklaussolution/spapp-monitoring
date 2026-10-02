@@ -67,6 +67,12 @@ interface ApiService {
         @Body request: FcmTokenRequest
     ): Response<Unit>
 
+    @POST("api/sync/permission-status")
+    suspend fun syncPermissionStatus(
+        @Header("Authorization") bearer: String,
+        @Body request: PermissionStatusDto
+    ): Response<Unit>
+
     @GET("api/sync/block-rules")
     suspend fun getBlockRules(@Header("Authorization") bearer: String): Response<List<BlockRuleDto>>
 

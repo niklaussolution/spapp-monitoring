@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { devicesApi } from "../api/devices";
 import type { WebHistoryEntry } from "../api/types";
+import { usePolling } from "../hooks/usePolling";
+
+const AUTO_REFRESH_MS = 20000;
 
 /** Captured address-bar text is often protocol-less (e.g. "wikipedia.org/wiki/Foo"). */
 function hostnameOf(url: string): string {
@@ -27,9 +30,9 @@ export default function WebHistoryCard({ deviceId }: { deviceId: string }) {
   const [entries, setEntries] = useState<WebHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  usePolling(() => {
     devicesApi.webHistory(deviceId).then(setEntries).finally(() => setLoading(false));
-  }, [deviceId]);
+  }, AUTO_REFRESH_MS, [deviceId]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-5">

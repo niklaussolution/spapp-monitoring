@@ -48,6 +48,26 @@ export interface Device {
   created_at: string;
   device_token?: string;
   featureFlags?: FeatureFlags;
+  permission_status?: PermissionStatus | null;
+}
+
+/**
+ * "Is the OS-level permission behind this scope actually granted on the
+ * device right now" — independent of whether the admin has that scope
+ * toggled on. Reported by PermissionStatusCollector (android-app) on every
+ * sync pass. Absent/null until the device has synced at least once.
+ */
+export interface PermissionStatus {
+  locationOnDemand: boolean;
+  geofencing: boolean;
+  appUsageTracking: boolean;
+  webHistoryTracking: boolean;
+  appBlocking: boolean;
+  smsLog: boolean;
+  callLog: boolean;
+  remoteLock: boolean;
+  fileManager: boolean;
+  installedAppsList: boolean;
 }
 
 export interface FeatureFlags {
