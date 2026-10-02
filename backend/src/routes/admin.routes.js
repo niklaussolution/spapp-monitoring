@@ -2,6 +2,7 @@ const express = require("express");
 const pool = require("../db/pool");
 const { requireAuth, requireSuperAdmin } = require("../middleware/auth.middleware");
 const firestore = require("../services/firestore.service");
+const { sendSyncNudge } = require("../services/fcm.service");
 
 const router = express.Router();
 router.use(requireAuth, requireSuperAdmin);
@@ -50,11 +51,19 @@ router.get("/tenants/:tenantId/devices", async (req, res, next) => {
   try {
     const devices = await pool.query(
       `SELECT id, device_label, status, platform, os_version, last_seen_at, created_at,
-              (fcm_token IS NOT NULL) AS has_fcm_token
+              (fcm_token IS NOT NULL) AS has_fcm_token, permission_status
        FROM devices WHERE tenant_id = $1 ORDER BY created_at DESC`,
       [req.params.tenantId]
     );
     if (devices.rows.length === 0) return res.json([]);
+
+    const flagsResult = await pool.query(
+      `SELECT device_id, location_on_demand, geofencing, app_usage_tracking, web_history_tracking,
+              app_blocking, sms_log, call_log, remote_lock, file_manager, installed_apps_list
+       FROM feature_flags WHERE device_id = ANY($1::uuid[])`,
+      [devices.rows.map((d) => d.id)]
+    );
+    const flagsByDevice = Object.fromEntries(flagsResult.rows.map((r) => [r.device_id, r]));
 
     const counts = await pool.query(
       `SELECT
@@ -71,7 +80,60 @@ router.get("/tenants/:tenantId/devices", async (req, res, next) => {
     );
     const countsByDevice = Object.fromEntries(counts.rows.map((r) => [r.device_id, r]));
 
-    res.json(devices.rows.map((d) => ({ ...d, counts: countsByDevice[d.id] || {} })));
+    res.json(
+      devices.rows.map((d) => ({
+        ...d,
+        counts: countsByDevice[d.id] || {},
+        feature_flags: flagsByDevice[d.id] || null,
+      }))
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/admin/tenants/:tenantId/devices/:deviceId/commands
+ * Super-admin-only escape hatch for testing a device without that tenant's
+ * own login — queues a command exactly like the normal tenant-scoped
+ * POST /api/devices/:id/commands, and sends the same FCM wake-up push.
+ */
+router.post("/tenants/:tenantId/devices/:deviceId/commands", async (req, res, next) => {
+  try {
+    const device = await pool.query(
+      "SELECT id, fcm_token FROM devices WHERE id = $1 AND tenant_id = $2",
+      [req.params.deviceId, req.params.tenantId]
+    );
+    if (device.rows.length === 0) return res.status(404).json({ error: "Device not found" });
+
+    const result = await pool.query(
+      `INSERT INTO remote_commands (device_id, command_type, payload, status)
+       VALUES ($1, $2, $3, 'pending')
+       RETURNING id, command_type, status, created_at`,
+      [req.params.deviceId, req.body.commandType, req.body.payload || null]
+    );
+
+    const push = await sendSyncNudge(device.rows[0].fcm_token);
+    res.status(201).json({ ...result.rows[0], push });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/admin/tenants/:tenantId/devices/:deviceId/commands/:commandId
+ */
+router.get("/tenants/:tenantId/devices/:deviceId/commands/:commandId", async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT rc.id, rc.command_type, rc.status, rc.result, rc.created_at, rc.completed_at
+       FROM remote_commands rc
+       JOIN devices d ON d.id = rc.device_id
+       WHERE rc.id = $1 AND rc.device_id = $2 AND d.tenant_id = $3`,
+      [req.params.commandId, req.params.deviceId, req.params.tenantId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: "Command not found" });
+    res.json(result.rows[0]);
   } catch (err) {
     next(err);
   }
