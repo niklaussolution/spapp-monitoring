@@ -18,6 +18,10 @@ export default function BlockRulesCard({ deviceId }: { deviceId: string }) {
   const [pending, setPending] = useState<Set<string>>(new Set());
   const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
   const pollTimers = useRef<Record<string, number>>({});
+  // Rules deleted on the backend already, but kept visible (greyed out,
+  // controls disabled) until the device confirms it's synced since the
+  // delete — removed from view only then, not the instant the API call returns.
+  const [removing, setRemoving] = useState<Set<string>>(new Set());
 
   function load() {
     devicesApi.listBlockRules(deviceId).then(setRules);
@@ -62,18 +66,39 @@ export default function BlockRulesCard({ deviceId }: { deviceId: string }) {
     confirmDeviceSync(rule.id);
   }
 
-  async function handleDelete(id: string) {
-    await devicesApi.deleteBlockRule(deviceId, id);
-    load();
+  /**
+   * The rule is gone from the backend the moment this call returns — the
+   * device's next sync simply won't include it anymore, there's no "undo
+   * the delete" to ack. But staying visible until the device has actually
+   * had a chance to sync (not just "we told the server") is what the admin
+   * asked for: don't let the dashboard claim a block is lifted before the
+   * target device could possibly know that yet.
+   */
+  async function handleDelete(rule: BlockRule) {
+    setRemoving((s) => new Set(s).add(rule.id));
+    await devicesApi.deleteBlockRule(deviceId, rule.id);
+    confirmDeviceSync(rule.id, { onConfirmed: () => removeFromView(rule.id) });
+  }
+
+  function removeFromView(ruleId: string) {
+    setRules((prev) => prev.filter((r) => r.id !== ruleId));
+    setRemoving((s) => {
+      const next = new Set(s);
+      next.delete(ruleId);
+      return next;
+    });
   }
 
   /**
-   * Same "has the device actually synced since this change" signal as
-   * FeatureFlagsCard — a block rule isn't a command the device acks, it's
-   * just picked up on the next sync, so creating or toggling one used to
-   * look identical on the dashboard whether the device had it yet or not.
+   * Same "has the device actually synced since this change" signal used
+   * throughout — a block rule isn't a command the device acks, it's just
+   * picked up on the next sync, so creating, toggling, or removing one
+   * used to look identical on the dashboard whether the device had it yet
+   * or not. `onConfirmed` lets delete additionally drop the row once
+   * confirmed (or once polling gives up — the rule is deleted server-side
+   * either way by then, so there's nothing left to keep showing).
    */
-  function confirmDeviceSync(ruleId: string) {
+  function confirmDeviceSync(ruleId: string, opts?: { onConfirmed?: () => void }) {
     setPending((s) => new Set(s).add(ruleId));
     setConfirmed((s) => {
       const next = new Set(s);
@@ -95,6 +120,10 @@ export default function BlockRulesCard({ deviceId }: { deviceId: string }) {
             next.delete(ruleId);
             return next;
           });
+          if (opts?.onConfirmed) {
+            opts.onConfirmed();
+            return;
+          }
           setConfirmed((s) => new Set(s).add(ruleId));
           window.setTimeout(() => {
             setConfirmed((s) => {
@@ -117,6 +146,9 @@ export default function BlockRulesCard({ deviceId }: { deviceId: string }) {
           next.delete(ruleId);
           return next;
         });
+        // Give up waiting for confirmation, but the rule really is gone
+        // server-side by now — don't leave a dead row behind forever.
+        opts?.onConfirmed?.();
       }
     };
 
@@ -212,29 +244,44 @@ export default function BlockRulesCard({ deviceId }: { deviceId: string }) {
         <div className="space-y-2">
           {rules.map((r) => {
             const app = apps.find((a) => a.package_name === r.target);
+            const isRemoving = removing.has(r.id);
             return (
-              <div key={r.id} className="flex justify-between items-center text-xs border-b pb-2 last:border-0">
+              <div
+                key={r.id}
+                className={`flex justify-between items-center text-xs border-b pb-2 last:border-0 ${
+                  isRemoving ? "opacity-50" : ""
+                }`}
+              >
                 <div className="flex items-center gap-2">
                   {r.rule_type === "app" && app?.icon_base64 && (
                     <img src={`data:image/png;base64,${app.icon_base64}`} alt="" className="w-5 h-5 rounded" />
                   )}
                   <span className="uppercase text-gray-400">{r.rule_type}</span>
                   <span className="font-mono">{app?.app_name || r.target}</span>
-                  {pending.has(r.id) && (
+                  {isRemoving && (
+                    <span className="text-gray-400" title="Waiting for the device to confirm removal...">
+                      Removing... ⏳
+                    </span>
+                  )}
+                  {!isRemoving && pending.has(r.id) && (
                     <span className="text-gray-300" title="Waiting for the device to sync...">
                       ⏳
                     </span>
                   )}
-                  {confirmed.has(r.id) && (
+                  {!isRemoving && confirmed.has(r.id) && (
                     <span className="text-green-600" title="Device has synced since this change">
                       ✓
                     </span>
                   )}
                 </div>
                 <div className="flex items-center gap-3">
-                  <ToggleSwitch checked={r.active} onChange={() => toggleActive(r)} />
-                  <button onClick={() => handleDelete(r.id)} className="text-red-500 hover:underline">
-                    Remove
+                  <ToggleSwitch checked={r.active} onChange={() => toggleActive(r)} disabled={isRemoving} />
+                  <button
+                    onClick={() => handleDelete(r)}
+                    disabled={isRemoving}
+                    className="text-red-500 hover:underline disabled:opacity-50 disabled:cursor-wait"
+                  >
+                    {isRemoving ? "..." : "Remove"}
                   </button>
                 </div>
               </div>
