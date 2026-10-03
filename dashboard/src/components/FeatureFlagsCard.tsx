@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { devicesApi } from "../api/devices";
 import type { FeatureFlags, PermissionStatus } from "../api/types";
+import ToggleSwitch from "./ToggleSwitch";
 
 const FLAG_LABELS: Record<keyof Omit<FeatureFlags, "device_id" | "updated_at">, string> = {
   location_on_demand: "Location (on-demand)",
@@ -153,25 +154,5 @@ export default function FeatureFlagsCard({
         })}
       </div>
     </div>
-  );
-}
-
-function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: () => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={onChange}
-      className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${
-        checked ? "bg-primary" : "bg-gray-300"
-      }`}
-    >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-          checked ? "translate-x-4" : "translate-x-0.5"
-        }`}
-      />
-    </button>
   );
 }
