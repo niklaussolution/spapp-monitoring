@@ -39,6 +39,7 @@ class BlockAccessibilityService : AccessibilityService() {
     private var lastBlockedPackage: String? = null
     private var lastBlockedAt = 0L
     private var lastRecordedUrl: String? = null
+    private var lastContentCheckAt = 0L
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val browserUrlBarIds = setOf(
@@ -56,38 +57,65 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return // never block ourselves
 
-        // Web history recording is independent of block rules existing at
-        // all — it used to live inside the "rules.isEmpty() return" guard
-        // below, which meant no rules configured == no history ever
-        // recorded, even with the feature flag on.
-        if (packageName in browserPackages) {
-            recordUrlIfEnabled(event, rootInActiveWindow)
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                // A real window/app change — covers app-level blocking and
+                // catches the URL bar on first arriving at a browser.
+                if (packageName in browserPackages) {
+                    recordUrlIfEnabled(event, rootInActiveWindow)
+                    checkWebsiteRules()
+                }
+                checkAppRule(packageName)
+            }
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                // Navigating to a different site/tab *within* the same
+                // browser window never fires TYPE_WINDOW_STATE_CHANGED (the
+                // window itself doesn't change) — without this branch, only
+                // the very first site visited after switching into the
+                // browser ever got captured or checked against website
+                // rules; every subsequent navigation in that same session
+                // was silently missed. Content-changed fires constantly
+                // (scrolling, redraws), so it's throttled below — the work
+                // here is cheap either way (one node lookup + a string
+                // compare that no-ops on an unchanged URL).
+                if (packageName !in browserPackages) return
+                val now = System.currentTimeMillis()
+                if (now - lastContentCheckAt < 1000) return
+                lastContentCheckAt = now
+                recordUrlIfEnabled(event, rootInActiveWindow)
+                checkWebsiteRules()
+            }
+            else -> return
         }
+    }
 
+    private fun loadedRules(): List<BlockRule> {
         if (!::rulesCache.isInitialized) rulesCache = BlockRulesCache(applicationContext)
-        val rules = rulesCache.load()
-        if (rules.isEmpty()) return
+        return rulesCache.load()
+    }
 
+    private fun checkAppRule(packageName: String) {
+        val rules = loadedRules()
+        if (rules.isEmpty()) return
         val (dayAbbrev, minutesOfDay) = currentDayAndMinute()
 
-        // App-level rule for the foreground app itself.
         rules.firstOrNull { it.ruleType == "app" && it.target == packageName }
             ?.let { rule ->
                 if (rule.isActiveNow(dayAbbrev, minutesOfDay)) {
                     blockForeground(rule, packageName)
-                    return
                 }
             }
+    }
 
-        // Website rules — only checked if this foreground app is a known browser.
-        val websiteRules = rules.filter { it.ruleType == "website" }
+    private fun checkWebsiteRules() {
+        val websiteRules = loadedRules().filter { it.ruleType == "website" }
         if (websiteRules.isEmpty()) return
 
         val urlBarText = findUrlBarText(rootInActiveWindow) ?: return
+        val (dayAbbrev, minutesOfDay) = currentDayAndMinute()
         websiteRules.firstOrNull { rule ->
             rule.isActiveNow(dayAbbrev, minutesOfDay) && urlBarText.contains(rule.target, ignoreCase = true)
         }?.let { rule -> blockForeground(rule, urlBarText) }
