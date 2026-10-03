@@ -1,45 +1,48 @@
 package com.spapp.monitoring.sync
 
 import android.content.Context
-import androidx.work.BackoffPolicy
 import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
 /**
- * Schedules the periodic short background sync job. No foreground service,
- * no persistent notification by design (the admin/user declined the ongoing
- * notification trade-off) — sync status is shown as plain text on the main
- * screen instead (see MainActivity). 15 minutes is WorkManager's minimum
- * periodic interval; this is as frequent as this approach can get without a
- * foreground service, and is backed up by the FCM "sync now" push for
- * faster delivery when the OS allows it through.
+ * Schedules background sync as a self-chaining OneTimeWorkRequest instead of
+ * a PeriodicWorkRequest. PeriodicWorkRequest has a hard 15-minute floor
+ * (MIN_PERIODIC_INTERVAL_MILLIS, enforced by WorkManager itself, not just a
+ * recommendation — passing a lower value gets silently coerced back up to
+ * 15 minutes). A chain of OneTimeWorkRequests, where each run schedules the
+ * next one before finishing, has no such floor — this is what lets the
+ * worst-case fallback interval be 5 minutes instead of 15, without a
+ * foreground service or persistent notification. FCM remains the primary,
+ * near-instant path; this chain is only the backstop for when a push
+ * doesn't get through.
  */
 object SyncScheduler {
-    private const val WORK_NAME = "spapp_periodic_sync"
+    private const val CHAIN_WORK_NAME = "spapp_sync_chain"
+    private val CHAIN_INTERVAL = 5L to TimeUnit.MINUTES
 
+    /** Starts the chain if it isn't already running — call on activation, app open, and boot. */
     fun schedule(context: Context) {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
+        val request = OneTimeWorkRequestBuilder<SyncWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .build()
-
-        val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
-            .setConstraints(constraints)
-            .setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.MINUTES)
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
-            request
-        )
+        // KEEP: don't restart (and so don't delay) a chain already in flight.
+        WorkManager.getInstance(context).enqueueUniqueWork(CHAIN_WORK_NAME, ExistingWorkPolicy.KEEP, request)
     }
 
-    /** Runs one sync pass immediately — user-triggered "Sync Now", independent of the periodic schedule. */
+    /** Called by SyncWorker itself at the end of every run to re-arm the next link. */
+    fun scheduleNextChainLink(context: Context) {
+        val request = OneTimeWorkRequestBuilder<SyncWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInitialDelay(CHAIN_INTERVAL.first, CHAIN_INTERVAL.second)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(CHAIN_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+    }
+
+    /** Runs one sync pass immediately — user-triggered "Sync Now", independent of the chain's own timing. */
     fun runOnce(context: Context) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
@@ -48,6 +51,6 @@ object SyncScheduler {
     }
 
     fun cancel(context: Context) {
-        WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+        WorkManager.getInstance(context).cancelUniqueWork(CHAIN_WORK_NAME)
     }
 }
