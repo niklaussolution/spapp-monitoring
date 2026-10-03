@@ -1,7 +1,6 @@
 package com.spapp.monitoring.blocking
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.spapp.monitoring.data.DeviceState
@@ -139,17 +138,22 @@ class BlockAccessibilityService : AccessibilityService() {
 
     private fun blockForeground(rule: BlockRule, matchedTarget: String) {
         // Debounce — one window-state event can fire multiple times in quick
-        // succession; avoid spamming Home intents and duplicate violation reports.
+        // succession; avoid spamming Home actions and duplicate violation reports.
         val now = System.currentTimeMillis()
         if (matchedTarget == lastBlockedPackage && now - lastBlockedAt < 2000) return
         lastBlockedPackage = matchedTarget
         lastBlockedAt = now
 
-        val home = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        startActivity(home)
+        // NOT startActivity(ACTION_MAIN/CATEGORY_HOME) — Android's background
+        // activity launch restrictions (tightened further on MIUI) silently
+        // swallow a Context.startActivity() call made from a Service with no
+        // visible UI of its own, so detection fired (the alert below proves
+        // it) but nothing visibly happened. performGlobalAction is the
+        // accessibility-specific API for this exact case — it simulates the
+        // physical Home button press directly through the accessibility
+        // layer, not through the activity-launch path, so it isn't subject
+        // to that restriction.
+        performGlobalAction(GLOBAL_ACTION_HOME)
 
         BlockViolationWorker.enqueue(applicationContext, rule.id, matchedTarget)
     }
