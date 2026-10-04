@@ -1,6 +1,8 @@
 package com.spapp.monitoring.blocking
 
 import android.accessibilityservice.AccessibilityService
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.spapp.monitoring.data.DeviceState
@@ -32,6 +34,23 @@ import java.util.Locale
  * resource-id for their URL bar, listed below; an unsupported or updated
  * browser simply won't be covered, for blocking or for history, while
  * app-level blocking (blocking a browser entirely) still works regardless.
+ *
+ * EVENT SUBSCRIPTION — ONLY typeWindowStateChanged (see
+ * accessibility_service_config.xml), deliberately. An earlier version also
+ * subscribed to typeWindowContentChanged to catch in-page navigation within
+ * a browser (switching sites without leaving the window never fires
+ * typeWindowStateChanged). That event type fires constantly for every app's
+ * every UI redraw system-wide — there is no way to scope it to "only
+ * browsers" at the OS subscription level without also scoping
+ * typeWindowStateChanged the same way (AccessibilityServiceInfo.packageNames
+ * applies to all subscribed event types together, not per type), which would
+ * risk silently losing the very event app-blocking depends on for every
+ * other app. The flood of extra events was the suspected cause of app
+ * blocking becoming intermittent (worked twice, then silently didn't) after
+ * that change. Reverted — in-page navigation is now covered by a short
+ * polling loop (see browserPollRunnable) that only runs while a browser is
+ * confirmed foreground, so it costs nothing for any other app and never
+ * touches the service's OS-level event subscription.
  */
 class BlockAccessibilityService : AccessibilityService() {
 
@@ -39,8 +58,11 @@ class BlockAccessibilityService : AccessibilityService() {
     private var lastBlockedPackage: String? = null
     private var lastBlockedAt = 0L
     private var lastRecordedUrl: String? = null
-    private var lastContentCheckAt = 0L
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private val pollHandler = Handler(Looper.getMainLooper())
+    private var browserPollRunnable: Runnable? = null
+    private val browserPollIntervalMs = 1500L
 
     private val browserUrlBarIds = setOf(
         "com.android.chrome:id/url_bar",
@@ -57,39 +79,45 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return // never block ourselves
 
-        when (event.eventType) {
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                // A real window/app change — covers app-level blocking and
-                // catches the URL bar on first arriving at a browser.
-                if (packageName in browserPackages) {
-                    recordUrlIfEnabled(event, rootInActiveWindow)
-                    checkWebsiteRules()
-                }
-                checkAppRule(packageName)
-            }
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                // Navigating to a different site/tab *within* the same
-                // browser window never fires TYPE_WINDOW_STATE_CHANGED (the
-                // window itself doesn't change) — without this branch, only
-                // the very first site visited after switching into the
-                // browser ever got captured or checked against website
-                // rules; every subsequent navigation in that same session
-                // was silently missed. Content-changed fires constantly
-                // (scrolling, redraws), so it's throttled below — the work
-                // here is cheap either way (one node lookup + a string
-                // compare that no-ops on an unchanged URL).
-                if (packageName !in browserPackages) return
-                val now = System.currentTimeMillis()
-                if (now - lastContentCheckAt < 1000) return
-                lastContentCheckAt = now
-                recordUrlIfEnabled(event, rootInActiveWindow)
-                checkWebsiteRules()
-            }
-            else -> return
+        if (packageName in browserPackages) {
+            recordUrlIfEnabled(event, rootInActiveWindow)
+            checkWebsiteRules()
+            startBrowserPolling()
+        } else {
+            stopBrowserPolling()
         }
+
+        checkAppRule(packageName)
+    }
+
+    /**
+     * Re-checks the URL bar every ~1.5s while a browser stays foreground —
+     * this is what catches navigating to a different site within the same
+     * browser window, which never fires its own TYPE_WINDOW_STATE_CHANGED.
+     * Cancelled the moment any other app's window comes to the foreground
+     * (stopBrowserPolling, above), so it never runs while the user isn't
+     * actually in a browser.
+     */
+    private fun startBrowserPolling() {
+        if (browserPollRunnable != null) return // already running
+        val runnable = object : Runnable {
+            override fun run() {
+                recordUrlIfEnabled(null, rootInActiveWindow)
+                checkWebsiteRules()
+                pollHandler.postDelayed(this, browserPollIntervalMs)
+            }
+        }
+        browserPollRunnable = runnable
+        pollHandler.postDelayed(runnable, browserPollIntervalMs)
+    }
+
+    private fun stopBrowserPolling() {
+        browserPollRunnable?.let { pollHandler.removeCallbacks(it) }
+        browserPollRunnable = null
     }
 
     private fun loadedRules(): List<BlockRule> {
@@ -131,7 +159,8 @@ class BlockAccessibilityService : AccessibilityService() {
         "search or type web address",
     )
 
-    private fun recordUrlIfEnabled(event: AccessibilityEvent, root: AccessibilityNodeInfo?) {
+    /** `event` is only non-null when called from the window-state-changed path — the title comes from there. */
+    private fun recordUrlIfEnabled(event: AccessibilityEvent?, root: AccessibilityNodeInfo?) {
         if (!DeviceState(applicationContext).webHistoryTrackingEnabled) return
         val url = findUrlBarText(root) ?: return
         if (addressBarHints.any { url.trim().equals(it, ignoreCase = true) }) return // omnibox hint text, not a visit
@@ -141,7 +170,8 @@ class BlockAccessibilityService : AccessibilityService() {
         // Chrome reports the page's <title> as the window-state event's own
         // text (this is how the tab/window is announced to accessibility
         // services) — separate from the url_bar node, which only has the URL.
-        val title = event.text?.firstOrNull()?.toString()?.takeIf { it.isNotBlank() }
+        // Not available on a poll tick (no event), so title stays null then.
+        val title = event?.text?.firstOrNull()?.toString()?.takeIf { it.isNotBlank() }
 
         scope.launch {
             try {
@@ -193,5 +223,7 @@ class BlockAccessibilityService : AccessibilityService() {
         return dayAbbrev to minutesOfDay
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() {
+        stopBrowserPolling()
+    }
 }
