@@ -502,6 +502,7 @@ router.get("/block-rules", async (req, res, next) => {
   try {
     const flags = await getFlags(req.device.deviceId);
     if (!flags || !flags.app_blocking) {
+      await touchLastSeen(req.device.deviceId);
       return res.json([]);
     }
 
@@ -509,6 +510,14 @@ router.get("/block-rules", async (req, res, next) => {
       "SELECT id, rule_type, target, schedule FROM block_rules WHERE device_id = $1 AND active = true",
       [req.device.deviceId]
     );
+    // Separate from touchLastSeen's last_seen_at: that column advances on
+    // almost any successful sync call (feature-flags is fetched first and
+    // rarely fails), so it doesn't actually prove this specific fetch
+    // happened — the dashboard could show a block-rule change "confirmed"
+    // from an unrelated call succeeding while this one hadn't run yet. This
+    // column is touched only here, so polling it after a rule change is a
+    // real guarantee the device has the updated rule list.
+    await pool.query("UPDATE devices SET block_rules_synced_at = now() WHERE id = $1", [req.device.deviceId]);
     await touchLastSeen(req.device.deviceId);
     res.json(result.rows);
   } catch (err) {

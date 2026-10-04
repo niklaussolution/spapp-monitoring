@@ -88,7 +88,7 @@ router.get("/:id", requireAuth, async (req, res, next) => {
   try {
     const deviceResult = await pool.query(
       `SELECT id, device_label, device_token, status, platform, os_version, app_version,
-              consent_given_at, last_seen_at, created_at, permission_status
+              consent_given_at, last_seen_at, created_at, permission_status, block_rules_synced_at
        FROM devices WHERE id = $1 AND tenant_id = $2`,
       [req.params.id, req.auth.tenantId]
     );

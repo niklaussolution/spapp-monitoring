@@ -90,13 +90,13 @@ export default function BlockRulesCard({ deviceId }: { deviceId: string }) {
   }
 
   /**
-   * Same "has the device actually synced since this change" signal used
-   * throughout — a block rule isn't a command the device acks, it's just
-   * picked up on the next sync, so creating, toggling, or removing one
-   * used to look identical on the dashboard whether the device had it yet
-   * or not. `onConfirmed` lets delete additionally drop the row once
-   * confirmed (or once polling gives up — the rule is deleted server-side
-   * either way by then, so there's nothing left to keep showing).
+   * Polls device.block_rules_synced_at specifically — NOT last_seen_at.
+   * last_seen_at advances on almost any successful sync call (feature-flags
+   * is fetched first in each pass and rarely fails), so it doesn't actually
+   * prove the device re-fetched its block rules; it could look "confirmed"
+   * from an unrelated call succeeding while the rule list the device is
+   * actually enforcing is still stale. block_rules_synced_at is touched
+   * only by GET /api/sync/block-rules, so it's a real guarantee.
    */
   function confirmDeviceSync(ruleId: string, opts?: { onConfirmed?: () => void }) {
     setPending((s) => new Set(s).add(ruleId));
@@ -113,8 +113,10 @@ export default function BlockRulesCard({ deviceId }: { deviceId: string }) {
       attempts++;
       try {
         const device = await devicesApi.get(deviceId);
-        const lastSeen = device.last_seen_at ? new Date(device.last_seen_at).getTime() : 0;
-        if (lastSeen > changedAt) {
+        const rulesSyncedAt = device.block_rules_synced_at
+          ? new Date(device.block_rules_synced_at).getTime()
+          : 0;
+        if (rulesSyncedAt > changedAt) {
           setPending((s) => {
             const next = new Set(s);
             next.delete(ruleId);

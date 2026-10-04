@@ -44,6 +44,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_token ON devices(device_token);
 -- the same pattern).
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS permission_status JSONB;
 
+-- Touched only by GET /api/sync/block-rules — see that route's comment.
+-- Separate from last_seen_at so the dashboard can confirm a block-rule
+-- change specifically reached the device, not just that *some* sync call
+-- succeeded around the same time.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS block_rules_synced_at TIMESTAMPTZ;
+
 -- ------------------------------------------------------------
 -- Feature flags: per-device runtime toggles (admin-selectable scope).
 -- ------------------------------------------------------------

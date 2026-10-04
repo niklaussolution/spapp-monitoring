@@ -49,6 +49,8 @@ export interface Device {
   device_token?: string;
   featureFlags?: FeatureFlags;
   permission_status?: PermissionStatus | null;
+  /** Touched only when the device fetches GET /api/sync/block-rules — see that route. */
+  block_rules_synced_at?: string | null;
 }
 
 /**
