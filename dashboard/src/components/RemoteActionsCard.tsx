@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { devicesApi } from "../api/devices";
 import { downloadFileViaRelay } from "../api/fileDownload";
+import ScreenStreamModal from "./ScreenStreamModal";
 
 interface FileEntryDtoLocal {
   name: string;
@@ -24,9 +25,11 @@ function parentOf(path: string): string {
 
 export default function RemoteActionsCard({
   deviceId,
+  deviceName,
   onLocationUpdated,
 }: {
   deviceId: string;
+  deviceName?: string;
   onLocationUpdated?: () => void;
 }) {
   const [status, setStatus] = useState<string | null>(null);
@@ -35,6 +38,7 @@ export default function RemoteActionsCard({
   const [currentPath, setCurrentPath] = useState("");
   const [popupFile, setPopupFile] = useState<FileEntryDtoLocal | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [showStreamModal, setShowStreamModal] = useState(false);
 
   const children = useMemo(() => {
     if (!files) return [];
@@ -151,6 +155,13 @@ export default function RemoteActionsCard({
         <ActionButton onClick={handleLocationCheck} label="Check Location Now" />
         <ActionButton onClick={handleLock} label="Lock Device" />
         <ActionButton onClick={handleFileList} label="List Files" loading={fileListLoading} />
+        <button
+          onClick={() => setShowStreamModal(true)}
+          className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold px-3 py-2 rounded shadow-sm hover:shadow transition"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse" />
+          <span>Live Screen Stream</span>
+        </button>
       </div>
       {status && <p className="text-xs text-gray-500 mb-3">{status}</p>}
 
@@ -236,6 +247,15 @@ export default function RemoteActionsCard({
             </div>
           </div>
         </div>
+      )}
+
+      {showStreamModal && (
+        <ScreenStreamModal
+          isOpen={showStreamModal}
+          onClose={() => setShowStreamModal(false)}
+          deviceId={deviceId}
+          deviceName={deviceName}
+        />
       )}
     </div>
   );

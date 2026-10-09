@@ -58,6 +58,25 @@ class DeviceState(context: Context) {
         get() = prefs.getBoolean(KEY_WEB_HISTORY_ENABLED, false)
         set(value) = prefs.edit { putBoolean(KEY_WEB_HISTORY_ENABLED, value) }
 
+    fun getEffectiveDeviceId(): String? {
+        val current = deviceId
+        if (!current.isNullOrEmpty()) return current
+        val token = authToken ?: return null
+        return try {
+            val parts = token.split(".")
+            if (parts.size >= 2) {
+                val decoded = String(android.util.Base64.decode(parts[1], android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP))
+                val sub = org.json.JSONObject(decoded).optString("sub")
+                if (sub.isNotEmpty()) {
+                    deviceId = sub
+                    sub
+                } else null
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     companion object {
         private const val KEY_CONSENT_GIVEN = "consent_given"
         private const val KEY_AUTH_TOKEN = "auth_token"

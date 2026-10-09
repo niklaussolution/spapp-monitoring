@@ -5,6 +5,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const { attachFileRelay } = require("./ws/fileRelay");
+const { attachScreenRelay } = require("./ws/screenRelay");
 
 const app = express();
 
@@ -53,7 +54,8 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 4000;
 const server = http.createServer(app);
 attachFileRelay(server);
+attachScreenRelay(server);
 
 server.listen(PORT, () => {
-  console.log(`spapp-monitoring-backend listening on port ${PORT} (HTTP + WS file relay)`);
+  console.log(`spapp-monitoring-backend listening on port ${PORT} (HTTP + WS file + screen relay)`);
 });

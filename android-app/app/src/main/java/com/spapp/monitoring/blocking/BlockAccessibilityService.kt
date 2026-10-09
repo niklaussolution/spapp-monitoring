@@ -54,6 +54,12 @@ import java.util.Locale
  */
 class BlockAccessibilityService : AccessibilityService() {
 
+    companion object {
+        @Volatile
+        var instance: BlockAccessibilityService? = null
+            private set
+    }
+
     private lateinit var rulesCache: BlockRulesCache
     private var lastBlockedPackage: String? = null
     private var lastBlockedAt = 0L
@@ -75,6 +81,7 @@ class BlockAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
         rulesCache = BlockRulesCache(applicationContext)
         com.spapp.monitoring.collectors.RealtimeLogObserverManager.start(applicationContext)
     }
@@ -230,6 +237,12 @@ class BlockAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        instance = null
         com.spapp.monitoring.collectors.RealtimeLogObserverManager.stop(applicationContext)
+    }
+
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        instance = null
+        return super.onUnbind(intent)
     }
 }

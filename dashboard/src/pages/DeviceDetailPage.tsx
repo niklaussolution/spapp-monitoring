@@ -89,7 +89,11 @@ export default function DeviceDetailPage() {
           />
         )}
 
-        <RemoteActionsCard deviceId={id} onLocationUpdated={() => setLocationRefreshKey((k) => k + 1)} />
+        <RemoteActionsCard
+          deviceId={id}
+          deviceName={device.device_label}
+          onLocationUpdated={() => setLocationRefreshKey((k) => k + 1)}
+        />
         <LocationCard deviceId={id} refreshKey={locationRefreshKey} />
         <GeofencesCard deviceId={id} />
         <AppUsageChart deviceId={id} />
