@@ -106,9 +106,13 @@ function attachScreenRelay(httpServer) {
       }
 
       ws.on("message", (data, isBinary) => {
-        // Broadcast binary frame to all connected admins watching this device
+        // Broadcast binary frame/audio to all connected admins watching this device
         for (const admin of stream.adminWsSet) {
           if (admin.readyState === ws.OPEN) {
+            // Buffer bloat prevention: drop stale frames if admin client socket is backed up
+            if (isBinary && admin.bufferedAmount > 32 * 1024) {
+              continue;
+            }
             admin.send(data, { binary: isBinary });
           }
         }

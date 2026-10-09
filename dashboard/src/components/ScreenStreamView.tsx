@@ -34,12 +34,23 @@ export default function ScreenStreamView({
   const [streamDuration, setStreamDuration] = useState<number>(0);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [screenResolution, setScreenResolution] = useState<string | null>(null);
+  const [hasAudioStream, setHasAudioStream] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const currentUrlRef = useRef<string | null>(null);
   const frameTimestampsRef = useRef<number[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isMountedRef = useRef<boolean>(true);
+
+  // Audio Context & scheduler refs
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const nextAudioTimeRef = useRef<number>(0);
+  const isMutedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   // Duration timer
   useEffect(() => {
@@ -65,7 +76,55 @@ export default function ScreenStreamView({
     return () => clearInterval(fpsInterval);
   }, []);
 
-  const startStream = async () => {
+  const getAudioContext = () => {
+    if (!audioCtxRef.current) {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      audioCtxRef.current = new AudioCtx({ sampleRate: 16000 });
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    return audioCtxRef.current;
+  };
+
+  const playPcmAudio = (pcmBytes: Uint8Array) => {
+    if (isMutedRef.current) return;
+    try {
+      const ctx = getAudioContext();
+      const int16 = new Int16Array(
+        pcmBytes.buffer,
+        pcmBytes.byteOffset,
+        pcmBytes.byteLength / 2
+      );
+      const numSamples = int16.length;
+      if (numSamples === 0) return;
+
+      const float32 = new Float32Array(numSamples);
+      for (let i = 0; i < numSamples; i++) {
+        float32[i] = int16[i] / 32768.0;
+      }
+
+      const buffer = ctx.createBuffer(1, numSamples, 16000);
+      buffer.copyToChannel(float32, 0);
+
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+
+      const currentTime = ctx.currentTime;
+      if (nextAudioTimeRef.current < currentTime) {
+        nextAudioTimeRef.current = currentTime + 0.04; // 40ms safety offset
+      }
+      source.start(nextAudioTimeRef.current);
+      nextAudioTimeRef.current += buffer.duration;
+    } catch (e) {
+      console.warn("PCM audio decode error", e);
+    }
+  };
+
+  const startStream = () => {
     // 1. Cleanup any existing WS
     if (wsRef.current) {
       try {
@@ -76,23 +135,9 @@ export default function ScreenStreamView({
       wsRef.current = null;
     }
 
-    setStatus("initializing");
-    setStatusMessage("Sending wake signal to phone...");
+    setStatus("connecting_ws");
+    setStatusMessage("Connecting to live stream pipe...");
 
-    // 2. Dispatch remote command to device
-    try {
-      const cmd = await devicesApi.createCommand(deviceId, "screen_stream", { action: "start" });
-      if (cmd.push && !cmd.push.sent) {
-        setStatusMessage(`Command queued (${cmd.push.reason || "push delayed"}). Connecting relay...`);
-      } else {
-        setStatusMessage("Wake command sent. Connecting to relay...");
-      }
-    } catch (e) {
-      console.warn("Failed to send screen_stream command:", e);
-      setStatusMessage("Connecting to relay...");
-    }
-
-    // 3. Connect Admin WebSocket
     const token = localStorage.getItem("spapp_token") || "";
     if (!token) {
       setStatus("error");
@@ -100,19 +145,37 @@ export default function ScreenStreamView({
       return;
     }
 
+    // 2. Open WebSocket IMMEDIATELY without waiting for HTTP POST
     const wsUrl = `${WS_BASE_URL}/ws/screen-stream?role=admin&token=${encodeURIComponent(
       token
     )}&deviceId=${encodeURIComponent(deviceId)}`;
 
-    setStatus("connecting_ws");
     const ws = new WebSocket(wsUrl);
+    ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
     ws.onopen = () => {
       if (!isMountedRef.current) return;
       setStatus("waiting_device");
-      setStatusMessage("Connected to relay. Waiting for device screen frames...");
+      setStatusMessage("Relay connected. Waiting for phone frames...");
     };
+
+    // 3. Concurrently dispatch wake command to device
+    devicesApi
+      .createCommand(deviceId, "screen_stream", { action: "start" })
+      .then((cmd) => {
+        if (!isMountedRef.current) return;
+        if (cmd.push && !cmd.push.sent) {
+          setStatusMessage(
+            `Wake queued (${cmd.push.reason || "push delayed"}). Awaiting device stream...`
+          );
+        } else {
+          setStatusMessage("Wake signal delivered. Initializing video pipe...");
+        }
+      })
+      .catch((e) => {
+        console.warn("Failed to send screen_stream wake command:", e);
+      });
 
     ws.onmessage = (event) => {
       if (!isMountedRef.current) return;
@@ -135,24 +198,34 @@ export default function ScreenStreamView({
         } catch {
           // ignore
         }
-      } else if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
-        const blob =
-          event.data instanceof Blob
-            ? event.data
-            : new Blob([event.data], { type: "image/jpeg" });
-        const newUrl = URL.createObjectURL(blob);
+      } else if (event.data instanceof ArrayBuffer) {
+        const bytes = new Uint8Array(event.data);
+        if (bytes.length < 2) return;
 
-        if (currentUrlRef.current) {
-          URL.revokeObjectURL(currentUrlRef.current);
+        // Packet Type Routing:
+        // 0x01: Video JPEG frame
+        // 0x02: Audio PCM 16kHz mono chunk
+        // 0xFF, 0xD8: Legacy raw JPEG frame
+        if (bytes[0] === 0x01 || (bytes[0] === 0xff && bytes[1] === 0xd8)) {
+          const jpegBytes = bytes[0] === 0x01 ? bytes.subarray(1) : bytes;
+          const blob = new Blob([jpegBytes], { type: "image/jpeg" });
+          const newUrl = URL.createObjectURL(blob);
+
+          if (currentUrlRef.current) {
+            URL.revokeObjectURL(currentUrlRef.current);
+          }
+          currentUrlRef.current = newUrl;
+          setFrameUrl(newUrl);
+
+          frameTimestampsRef.current.push(Date.now());
+          setFrameCount((prev) => prev + 1);
+
+          setStatus((prev) => (prev !== "streaming" ? "streaming" : prev));
+          setStatusMessage("Live stream active");
+        } else if (bytes[0] === 0x02) {
+          setHasAudioStream(true);
+          playPcmAudio(bytes.subarray(1));
         }
-        currentUrlRef.current = newUrl;
-        setFrameUrl(newUrl);
-
-        frameTimestampsRef.current.push(Date.now());
-        setFrameCount((prev) => prev + 1);
-
-        setStatus((prev) => (prev !== "streaming" ? "streaming" : prev));
-        setStatusMessage("Live stream active");
       }
     };
 
@@ -235,6 +308,13 @@ export default function ScreenStreamView({
       }
       if (currentUrlRef.current) {
         URL.revokeObjectURL(currentUrlRef.current);
+      }
+      if (audioCtxRef.current) {
+        try {
+          audioCtxRef.current.close();
+        } catch {
+          // ignore
+        }
       }
     };
   }, [deviceId]);
@@ -332,7 +412,7 @@ export default function ScreenStreamView({
 
       {/* Stream Metrics Pills */}
       <div className="w-full max-w-md flex items-center justify-between text-[11px] font-mono text-slate-400 bg-slate-900/90 rounded-lg px-3 py-1.5 mb-3 border border-slate-800/60">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <span className="flex items-center gap-1">
             <span className="text-slate-500">FPS:</span>
             <span className={`font-semibold ${fps > 0 ? "text-emerald-400" : "text-slate-400"}`}>
@@ -345,7 +425,16 @@ export default function ScreenStreamView({
             <span className="text-slate-300 font-semibold">{formatTimer(streamDuration)}</span>
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          {hasAudioStream && (
+            <>
+              <span className={`flex items-center gap-1 ${isMuted ? "text-amber-400" : "text-emerald-400"}`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                <span>{isMuted ? "MUTED" : "AUDIO"}</span>
+              </span>
+              <span className="text-slate-700">|</span>
+            </>
+          )}
           {screenResolution && (
             <>
               <span className="text-slate-300">{screenResolution}</span>
@@ -411,7 +500,7 @@ export default function ScreenStreamView({
                 <p className="text-[11px] text-slate-400 max-w-[200px] leading-relaxed">
                   {status === "stopped"
                     ? "Click 'Restart Stream' below to resume live view."
-                    : "Waking target phone to stream live screen silently via Accessibility."}
+                    : "Waking target phone to stream live screen & audio silently."}
                 </p>
               </div>
 
@@ -438,7 +527,38 @@ export default function ScreenStreamView({
       </div>
 
       {/* Bottom Control Bar */}
-      <div className="w-full max-w-md mt-4 flex items-center justify-center gap-2 pt-2">
+      <div className="w-full max-w-md mt-4 flex flex-wrap items-center justify-center gap-2 pt-2">
+        {/* Audio Mute/Unmute toggle */}
+        <button
+          onClick={() => {
+            getAudioContext();
+            setIsMuted((prev) => !prev);
+          }}
+          title={isMuted ? "Unmute Ambient Audio" : "Mute Ambient Audio"}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition shadow-sm ${
+            isMuted
+              ? "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+              : "bg-indigo-600 hover:bg-indigo-500 text-white"
+          }`}
+        >
+          {isMuted ? (
+            <>
+              <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+              </svg>
+              <span>Muted</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4 text-emerald-300 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+              </svg>
+              <span>Live Audio</span>
+            </>
+          )}
+        </button>
+
         <button
           onClick={handleSnapshot}
           disabled={!frameUrl}

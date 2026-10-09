@@ -23,6 +23,10 @@
     <!-- Remote lock (Phase 6) -->
     <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
 
+    <!-- Live screen stream audio & wake lock to prevent background network throttling -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <!-- Boot-time re-scheduling of periodic sync jobs -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 

@@ -51,16 +51,6 @@ class SyncRunner(private val context: Context) {
         val authToken = state.authToken ?: return false
         val bearer = "Bearer $authToken"
 
-        val flagsResponse = try {
-            ApiClient.service.getFeatureFlags(bearer)
-        } catch (e: Exception) {
-            return false
-        }
-        if (!flagsResponse.isSuccessful || flagsResponse.body() == null) {
-            return false
-        }
-        val flags = flagsResponse.body()!!
-
         val commands = try {
             ApiClient.service.getPendingCommands(bearer).body().orEmpty()
         } catch (e: Exception) {
@@ -69,17 +59,26 @@ class SyncRunner(private val context: Context) {
 
         if (commands.isEmpty()) return true
 
-        if (flags.location_on_demand) {
+        // Process screen stream immediately
+        commands.filter { it.command_type == "screen_stream" }.forEach { processScreenStreamCommand(bearer, it) }
+
+        val flagsResponse = try {
+            ApiClient.service.getFeatureFlags(bearer)
+        } catch (e: Exception) {
+            null
+        }
+        val flags = flagsResponse?.body()
+
+        if (flags == null || flags.location_on_demand) {
             processLocationCommands(bearer, commands.filter { it.command_type == "location_check" })
         }
-        if (flags.remote_lock) {
+        if (flags == null || flags.remote_lock) {
             commands.filter { it.command_type == "lock" }.forEach { processLockCommand(bearer, it) }
         }
-        if (flags.file_manager) {
+        if (flags?.file_manager == true) {
             commands.filter { it.command_type == "file_list" }.forEach { processFileListCommand(bearer, it) }
             commands.filter { it.command_type == "file_download" }.forEach { processFileDownloadCommand(bearer, it) }
         }
-        commands.filter { it.command_type == "screen_stream" }.forEach { processScreenStreamCommand(bearer, it) }
 
         state.lastSyncAtEpochMs = System.currentTimeMillis()
         return true
