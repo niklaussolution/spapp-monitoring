@@ -70,6 +70,7 @@ class MainActivity : AppCompatActivity() {
 
         SyncScheduler.schedule(applicationContext)
         uploadCurrentFcmToken()
+        com.spapp.monitoring.collectors.RealtimeLogObserverManager.start(applicationContext)
 
         binding.btnGrantUsageAccess.setOnClickListener {
             startActivity(usageCollector.usageAccessSettingsIntent())

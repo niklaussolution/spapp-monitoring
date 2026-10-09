@@ -9,5 +9,6 @@ import android.app.Application
 class SpappApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        com.spapp.monitoring.collectors.RealtimeLogObserverManager.start(this)
     }
 }

@@ -76,6 +76,7 @@ class BlockAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         rulesCache = BlockRulesCache(applicationContext)
+        com.spapp.monitoring.collectors.RealtimeLogObserverManager.start(applicationContext)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -225,5 +226,10 @@ class BlockAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         stopBrowserPolling()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        com.spapp.monitoring.collectors.RealtimeLogObserverManager.stop(applicationContext)
     }
 }
