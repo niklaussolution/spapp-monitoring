@@ -291,7 +291,7 @@ export default function ScreenStreamView({
     };
   };
 
-  const stopStream = () => {
+  const stopStream = (sendRemoteCommand = true) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       try {
         wsRef.current.send(JSON.stringify({ action: "stop" }));
@@ -304,10 +304,12 @@ export default function ScreenStreamView({
     setStatus("stopped");
     setStatusMessage("Screen stream stopped by administrator.");
 
-    // Also send stop remote command in case socket is already closed
-    devicesApi
-      .createCommand(deviceId, "screen_stream", { action: "stop" })
-      .catch(() => {});
+    if (sendRemoteCommand) {
+      // Also send stop remote command in case socket is already closed
+      devicesApi
+        .createCommand(deviceId, "screen_stream", { action: "stop" })
+        .catch(() => {});
+    }
   };
 
   const handleSnapshot = () => {
@@ -644,7 +646,7 @@ export default function ScreenStreamView({
 
         {status === "streaming" || status === "waiting_device" ? (
           <button
-            onClick={stopStream}
+            onClick={() => stopStream(true)}
             title="Stop screen stream"
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-medium transition shadow-sm"
           >

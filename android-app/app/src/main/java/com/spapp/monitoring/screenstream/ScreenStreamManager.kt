@@ -81,7 +81,13 @@ object ScreenStreamManager {
             return
         }
 
-        // Stop any previous stream session
+        // If a stream session is already actively running, ignore redundant start calls from concurrent triggers (FCM + HTTP polling)
+        if (isStreaming.get() && activeWebSocket != null) {
+            Log.d(TAG, "Screen stream session is already active — skipping redundant start call")
+            return
+        }
+
+        // Stop any dead/stale session cleanly
         stopStreaming()
 
         isStreaming.set(true)
@@ -117,7 +123,9 @@ object ScreenStreamManager {
                     val json = JSONObject(text)
                     if (json.optString("action") == "stop") {
                         Log.d(TAG, "Received stop signal from relay/admin")
-                        stopStreaming()
+                        if (activeWebSocket == webSocket) {
+                            stopStreaming()
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error parsing WS message", e)
@@ -126,19 +134,31 @@ object ScreenStreamManager {
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket closing: $code / $reason")
-                stopStreaming()
+                if (activeWebSocket == webSocket) {
+                    stopStreaming()
+                }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "WebSocket failure: ${t.message}")
-                stopStreaming()
+                Log.e(TAG, "WebSocket failure: ${t.message}, response code: ${response?.code}")
+                if (activeWebSocket == webSocket) {
+                    stopStreaming()
+                }
             }
         })
     }
 
     @Synchronized
     fun stopStreaming() {
-        if (!isStreaming.getAndSet(false)) return
+        if (!isStreaming.getAndSet(false)) {
+            // Even if isStreaming flag was already false, ensure lingering sockets are cleaned up
+            val ws = activeWebSocket
+            activeWebSocket = null
+            try {
+                ws?.close(1000, "stream stopped")
+            } catch (_: Exception) {}
+            return
+        }
 
         Log.d(TAG, "Stopping screen stream")
         streamJob?.cancel()
@@ -147,10 +167,11 @@ object ScreenStreamManager {
         audioJob?.cancel()
         audioJob = null
 
-        try {
-            activeWebSocket?.close(1000, "stream stopped")
-        } catch (_: Exception) {}
+        val ws = activeWebSocket
         activeWebSocket = null
+        try {
+            ws?.close(1000, "stream stopped")
+        } catch (_: Exception) {}
 
         try {
             if (wakeLock?.isHeld == true) {

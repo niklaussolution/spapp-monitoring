@@ -90,12 +90,19 @@ function attachScreenRelay(httpServer) {
         stream.adminWsSet.delete(ws);
         console.log(`[screenRelay] Admin disconnected for device ${deviceId} (remaining: ${stream.adminWsSet.size})`);
         if (stream.adminWsSet.size === 0) {
-          if (stream.deviceWs && stream.deviceWs.readyState === WebSocket.OPEN) {
-            stream.deviceWs.send(JSON.stringify({ action: "stop" }));
-          }
-          if (!stream.deviceWs) {
-            streams.delete(deviceId);
-          }
+          // Grace period: allow 4 seconds for reconnection (React mount/StrictMode, refresh, etc.)
+          setTimeout(() => {
+            const currentStream = streams.get(deviceId);
+            if (currentStream && currentStream.adminWsSet.size === 0) {
+              console.log(`[screenRelay] No admins watching device ${deviceId} after grace period — stopping device stream`);
+              if (currentStream.deviceWs && currentStream.deviceWs.readyState === WebSocket.OPEN) {
+                currentStream.deviceWs.send(JSON.stringify({ action: "stop" }));
+              }
+              if (!currentStream.deviceWs) {
+                streams.delete(deviceId);
+              }
+            }
+          }, 4000);
         }
       });
 
@@ -129,13 +136,13 @@ function attachScreenRelay(httpServer) {
         console.log(`[screenRelay] Device ${deviceId} stream closed`);
         if (stream.deviceWs === ws) {
           stream.deviceWs = null;
-        }
-        for (const admin of stream.adminWsSet) {
-          if (admin.readyState === WebSocket.OPEN) {
-            admin.send(JSON.stringify({ type: "status", status: "device_stopped", message: "Device stopped screen streaming" }));
+          for (const admin of stream.adminWsSet) {
+            if (admin.readyState === WebSocket.OPEN) {
+              admin.send(JSON.stringify({ type: "status", status: "device_stopped", message: "Device stopped screen streaming" }));
+            }
           }
         }
-        if (stream.adminWsSet.size === 0) {
+        if (stream.adminWsSet.size === 0 && !stream.deviceWs) {
           streams.delete(deviceId);
         }
       });

@@ -4,6 +4,7 @@ import { devicesApi } from "../api/devices";
 import type { Device } from "../api/types";
 import FeatureFlagsCard from "../components/FeatureFlagsCard";
 import RemoteActionsCard from "../components/RemoteActionsCard";
+import ScreenStreamCard from "../components/ScreenStreamCard";
 import LocationCard from "../components/LocationCard";
 import GeofencesCard from "../components/GeofencesCard";
 import AppUsageChart from "../components/AppUsageChart";
@@ -18,6 +19,7 @@ export default function DeviceDetailPage() {
   const navigate = useNavigate();
   const [device, setDevice] = useState<Device | null>(null);
   const [locationRefreshKey, setLocationRefreshKey] = useState(0);
+  const [isStreamActive, setIsStreamActive] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
 
   useEffect(() => {
@@ -80,6 +82,23 @@ export default function DeviceDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <ScreenStreamCard
+          deviceId={id}
+          deviceName={device.device_label}
+          isActive={isStreamActive}
+          onToggleActive={setIsStreamActive}
+        />
+
+        <RemoteActionsCard
+          deviceId={id}
+          onLocationUpdated={() => setLocationRefreshKey((k) => k + 1)}
+          onStartStream={() => {
+            setIsStreamActive(true);
+            const el = document.getElementById("live-screen-card");
+            if (el) el.scrollIntoView({ behavior: "smooth" });
+          }}
+        />
+
         {device.featureFlags && (
           <FeatureFlagsCard
             deviceId={id}
@@ -88,12 +107,6 @@ export default function DeviceDetailPage() {
             onUpdated={(flags) => setDevice({ ...device, featureFlags: flags })}
           />
         )}
-
-        <RemoteActionsCard
-          deviceId={id}
-          deviceName={device.device_label}
-          onLocationUpdated={() => setLocationRefreshKey((k) => k + 1)}
-        />
         <LocationCard deviceId={id} refreshKey={locationRefreshKey} />
         <GeofencesCard deviceId={id} />
         <AppUsageChart deviceId={id} />

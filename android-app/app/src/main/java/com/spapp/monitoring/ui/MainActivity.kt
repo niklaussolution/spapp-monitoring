@@ -86,8 +86,30 @@ class MainActivity : AppCompatActivity() {
             deviceAdminLauncher.launch(SpappDeviceAdminReceiver.activationIntent(this))
         }
 
+        binding.btnEnableAccessibility.setOnClickListener {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.accessibility_dialog_title)
+                .setMessage(R.string.accessibility_dialog_message)
+                .setPositiveButton(R.string.go_to_settings) { _, _ ->
+                    try {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Cannot open accessibility settings", e)
+                    }
+                }
+                .setNeutralButton(R.string.open_app_info) { _, _ ->
+                    openAppInfoSettings()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
+        binding.btnOpenAppInfo.setOnClickListener {
+            openAppInfoSettings()
+        }
+
         binding.btnEnableAppBlocking.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            binding.btnEnableAccessibility.performClick()
         }
 
         binding.btnGrantFileAccess.setOnClickListener {
@@ -211,7 +233,41 @@ class MainActivity : AppCompatActivity() {
         private const val STATUS_REFRESH_MS = 30_000L
     }
 
+    private fun openAppInfoSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "No app-info settings screen available", e)
+        }
+    }
+
     private fun refreshPermissionButtons() {
+        // Accessibility Service Status
+        val isSettingEnabled = AccessibilityStatus.isEnabled(this)
+        val isServiceRunning = com.spapp.monitoring.blocking.BlockAccessibilityService.instance != null
+        val isAccessibilityActive = isSettingEnabled && isServiceRunning
+
+        if (isAccessibilityActive) {
+            binding.tvAccessibilityBadge.text = "ACTIVE ✓"
+            binding.tvAccessibilityBadge.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.success))
+            binding.tvAccessibilityBadge.setBackgroundColor(androidx.core.content.ContextCompat.getColor(this, R.color.success_bg))
+            binding.tvAccessibilityDesc.text = "Accessibility Service is active and monitoring."
+            binding.btnEnableAccessibility.text = "Accessibility Active (Tap to re-check)"
+            binding.btnEnableAccessibility.setBackgroundColor(androidx.core.content.ContextCompat.getColor(this, R.color.primary))
+            binding.btnOpenAppInfo.visibility = android.view.View.GONE
+        } else {
+            binding.tvAccessibilityBadge.text = "NOT ENABLED ✕"
+            binding.tvAccessibilityBadge.setTextColor(androidx.core.content.ContextCompat.getColor(this, R.color.danger))
+            binding.tvAccessibilityBadge.setBackgroundColor(androidx.core.content.ContextCompat.getColor(this, R.color.danger_bg))
+            binding.tvAccessibilityDesc.text = getString(R.string.accessibility_card_desc)
+            binding.btnEnableAccessibility.text = getString(R.string.enable_accessibility)
+            binding.btnEnableAccessibility.setBackgroundColor(androidx.core.content.ContextCompat.getColor(this, R.color.accent))
+            binding.btnOpenAppInfo.visibility = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) android.view.View.VISIBLE else android.view.View.GONE
+        }
+
         binding.btnGrantUsageAccess.visibility =
             if (usageCollector.hasUsageAccess()) android.view.View.GONE else android.view.View.VISIBLE
 
@@ -222,9 +278,6 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnEnableRemoteLock.visibility =
             if (SpappDeviceAdminReceiver.isActive(this)) android.view.View.GONE else android.view.View.VISIBLE
-
-        binding.btnEnableAppBlocking.visibility =
-            if (AccessibilityStatus.isEnabled(this)) android.view.View.GONE else android.view.View.VISIBLE
 
         val hasFullFileAccess = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
         binding.btnGrantFileAccess.visibility =
@@ -240,5 +293,13 @@ class MainActivity : AppCompatActivity() {
         // on MIUI the two are usually set together during initial setup.
         binding.btnGrantAutostart.visibility =
             if (hasBatteryExemption) android.view.View.GONE else android.view.View.VISIBLE
+
+        val anyOtherNeeded = !usageCollector.hasUsageAccess() ||
+                needsBackgroundLocation ||
+                !SpappDeviceAdminReceiver.isActive(this) ||
+                !hasFullFileAccess ||
+                !hasBatteryExemption
+        binding.tvOtherPermissionsHeader.visibility =
+            if (anyOtherNeeded) android.view.View.VISIBLE else android.view.View.GONE
     }
 }
