@@ -1,36 +1,62 @@
 package com.spapp.monitoring.fcm
 
+import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.spapp.monitoring.data.DeviceState
+import com.spapp.monitoring.sync.SyncRunner
 import com.spapp.monitoring.sync.SyncScheduler
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Receives FCM push messages — this is what makes "Check Location Now" /
- * remote lock / etc. instant instead of waiting for the next periodic poll
- * (Phase 5's fallback). We only ever send silent DATA messages (no visible
- * notification content), since the actual command payload always lives in
- * the backend's `remote_commands` table — the push is just a wake-up nudge,
- * never a place we'd put sensitive data.
+ * Receives FCM push messages — delivers near-instant response for "Check Location Now",
+ * remote lock, and on-demand commands.
+ *
+ * FirebaseMessagingService already executes on an OS-managed background worker thread
+ * and holds a WakeLock while onMessageReceived runs.
+ * We immediately execute SyncRunner.runFastCommandPass() right here so the location check
+ * completes in 1-3 seconds instead of waiting for WorkManager/JobScheduler delays.
  */
 class SpappFirebaseMessagingService : FirebaseMessagingService() {
 
+    companion object {
+        private const val TAG = "SpappFcmService"
+    }
+
     override fun onNewToken(token: String) {
         super.onNewToken(token)
+        Log.d(TAG, "New FCM token received: $token")
         FcmTokenSync.enqueueUpload(applicationContext, token)
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
+        Log.d(TAG, "FCM message received: data=${message.data}")
 
         val authToken = DeviceState(applicationContext).authToken
-        if (authToken.isNullOrEmpty()) return // not activated yet — ignore
-
-        // Every push we send is a "go sync now" nudge; SyncWorker itself
-        // decides what to do based on pending commands + feature flags.
-        when (message.data["type"]) {
-            "command", "sync" -> SyncScheduler.runOnce(applicationContext)
-            else -> SyncScheduler.runOnce(applicationContext)
+        if (authToken.isNullOrEmpty()) {
+            Log.w(TAG, "Device not activated yet — ignoring FCM push")
+            return
         }
+
+        // Execute fast command pass IMMEDIATELY.
+        // runBlocking holds the Firebase WakeLock and prevents the OS from putting the process
+        // to sleep before the location is fetched and POSTed to the backend.
+        try {
+            runBlocking(Dispatchers.IO) {
+                withTimeoutOrNull(15_000L) {
+                    val runner = SyncRunner(applicationContext)
+                    val result = runner.runFastCommandPass()
+                    Log.d(TAG, "Immediate command pass finished: result=$result")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error executing fast command pass from FCM", e)
+        }
+
+        // Also schedule a regular background sync pass via WorkManager to handle routine syncs
+        SyncScheduler.runOnce(applicationContext)
     }
 }

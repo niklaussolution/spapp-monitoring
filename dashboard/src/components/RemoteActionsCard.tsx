@@ -49,28 +49,47 @@ export default function RemoteActionsCard({
   const breadcrumbs = currentPath ? currentPath.split("/") : [];
 
   async function pollCommand(commandId: string, label: string) {
-    setStatus(`${label}: waiting for device...`);
-    for (let i = 0; i < 15; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const cmd = await devicesApi.getCommand(deviceId, commandId);
-      if (cmd.status === "acked") {
-        setStatus(`${label}: completed.`);
-        return cmd;
-      }
-      if (cmd.status === "failed") {
-        setStatus(`${label}: failed.`);
-        return cmd;
+    setStatus(`${label}: waiting for device response...`);
+    // Rapid check: 1s interval for the first 6 attempts (so instant responses in 1-3s show immediately)
+    // then 2s interval for remaining attempts (up to 45s total).
+    const maxAttempts = 25;
+    for (let i = 0; i < maxAttempts; i++) {
+      const delay = i < 6 ? 1000 : 2000;
+      await new Promise((r) => setTimeout(r, delay));
+      try {
+        const cmd = await devicesApi.getCommand(deviceId, commandId);
+        if (cmd.status === "acked") {
+          setStatus(`${label}: completed successfully.`);
+          return cmd;
+        }
+        if (cmd.status === "failed") {
+          const failMsg = (cmd.result as { message?: string } | undefined)?.message;
+          setStatus(`${label}: failed${failMsg ? ` (${failMsg})` : "."}`);
+          return cmd;
+        }
+      } catch {
+        // network glitch on dashboard poll — keep trying
       }
     }
-    setStatus(`${label}: still waiting (device may be offline) — will retry automatically.`);
+    setStatus(`${label}: device is taking longer to respond (may be sleeping or offline). Request remains queued.`);
     return null;
   }
 
   async function handleLocationCheck() {
-    const cmd = await devicesApi.createCommand(deviceId, "location_check");
-    const result = await pollCommand(cmd.id, "Location check");
-    if (result?.status === "acked") {
-      onLocationUpdated?.();
+    setStatus("Sending location request to device...");
+    try {
+      const cmd = await devicesApi.createCommand(deviceId, "location_check");
+      if (cmd.push && !cmd.push.sent) {
+        setStatus(`Command queued (Wake push: ${cmd.push.reason || "unavailable"}). Waiting for device...`);
+      } else {
+        setStatus("Wake signal sent. Awaiting device location...");
+      }
+      const result = await pollCommand(cmd.id, "Location check");
+      if (result?.status === "acked") {
+        onLocationUpdated?.();
+      }
+    } catch (e) {
+      setStatus(`Failed to request location: ${(e as Error).message}`);
     }
   }
 

@@ -39,7 +39,11 @@ router.post(
         [req.params.id, req.body.commandType, req.body.payload || null]
       );
 
-      const pushResult = await sendSyncNudge(device.rows[0].fcm_token);
+      const pushResult = await sendSyncNudge(device.rows[0].fcm_token, {
+        type: "command",
+        commandType: req.body.commandType,
+        commandId: result.rows[0].id,
+      });
 
       res.status(201).json({ ...result.rows[0], push: pushResult });
     } catch (err) {

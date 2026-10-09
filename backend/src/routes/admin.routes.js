@@ -113,7 +113,11 @@ router.post("/tenants/:tenantId/devices/:deviceId/commands", async (req, res, ne
       [req.params.deviceId, req.body.commandType, req.body.payload || null]
     );
 
-    const push = await sendSyncNudge(device.rows[0].fcm_token);
+    const push = await sendSyncNudge(device.rows[0].fcm_token, {
+      type: "command",
+      commandType: req.body.commandType,
+      commandId: result.rows[0].id,
+    });
     res.status(201).json({ ...result.rows[0], push });
   } catch (err) {
     next(err);

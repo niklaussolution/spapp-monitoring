@@ -164,6 +164,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         refreshPermissionButtons()
         statusUpdater.run()
+        uploadCurrentFcmToken()
     }
 
     override fun onPause() {
