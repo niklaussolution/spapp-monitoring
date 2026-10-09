@@ -124,6 +124,34 @@ export default function ScreenStreamView({
     }
   };
 
+  const pollCommandStatus = async (commandId: string) => {
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, i < 5 ? 1000 : 2000));
+      if (!isMountedRef.current) return;
+      try {
+        const cmd = await devicesApi.getCommand(deviceId, commandId);
+        if (cmd.status === "acked") {
+          const res = cmd.result as { success?: boolean; message?: string } | undefined;
+          if (res && res.success === false) {
+            setStatus("error");
+            setStatusMessage(res.message || "Device reported an error starting screen stream.");
+            return;
+          } else {
+            setStatusMessage("Device started streaming. Awaiting incoming frames...");
+            return;
+          }
+        } else if (cmd.status === "failed") {
+          const res = cmd.result as { message?: string } | undefined;
+          setStatus("error");
+          setStatusMessage(res?.message || "Remote command execution failed on device.");
+          return;
+        }
+      } catch {
+        // network glitch on poll
+      }
+    }
+  };
+
   const startStream = () => {
     // 1. Cleanup any existing WS
     if (wsRef.current) {
@@ -145,7 +173,7 @@ export default function ScreenStreamView({
       return;
     }
 
-    // 2. Open WebSocket IMMEDIATELY without waiting for HTTP POST
+    // 2. Open WebSocket IMMEDIATELY
     const wsUrl = `${WS_BASE_URL}/ws/screen-stream?role=admin&token=${encodeURIComponent(
       token
     )}&deviceId=${encodeURIComponent(deviceId)}`;
@@ -160,7 +188,7 @@ export default function ScreenStreamView({
       setStatusMessage("Relay connected. Waiting for phone frames...");
     };
 
-    // 3. Concurrently dispatch wake command to device
+    // 3. Concurrently dispatch wake command to device and poll acknowledgment
     devicesApi
       .createCommand(deviceId, "screen_stream", { action: "start" })
       .then((cmd) => {
@@ -170,14 +198,18 @@ export default function ScreenStreamView({
             `Wake queued (${cmd.push.reason || "push delayed"}). Awaiting device stream...`
           );
         } else {
-          setStatusMessage("Wake signal delivered. Initializing video pipe...");
+          setStatusMessage("Wake signal delivered. Waiting for device stream...");
         }
+        pollCommandStatus(cmd.id);
       })
       .catch((e) => {
         console.warn("Failed to send screen_stream wake command:", e);
+        if (isMountedRef.current) {
+          setStatusMessage("Wake error: " + (e as Error).message);
+        }
       });
 
-    ws.onmessage = (event) => {
+    ws.onmessage = async (event) => {
       if (!isMountedRef.current) return;
 
       if (typeof event.data === "string") {
@@ -198,8 +230,17 @@ export default function ScreenStreamView({
         } catch {
           // ignore
         }
-      } else if (event.data instanceof ArrayBuffer) {
-        const bytes = new Uint8Array(event.data);
+      } else {
+        let arrayBuffer: ArrayBuffer;
+        if (event.data instanceof ArrayBuffer) {
+          arrayBuffer = event.data;
+        } else if (event.data instanceof Blob) {
+          arrayBuffer = await event.data.arrayBuffer();
+        } else {
+          return;
+        }
+
+        const bytes = new Uint8Array(arrayBuffer);
         if (bytes.length < 2) return;
 
         // Packet Type Routing:
@@ -220,7 +261,7 @@ export default function ScreenStreamView({
           frameTimestampsRef.current.push(Date.now());
           setFrameCount((prev) => prev + 1);
 
-          setStatus((prev) => (prev !== "streaming" ? "streaming" : prev));
+          setStatus("streaming");
           setStatusMessage("Live stream active");
         } else if (bytes[0] === 0x02) {
           setHasAudioStream(true);
@@ -233,14 +274,19 @@ export default function ScreenStreamView({
       console.error("Screen stream WebSocket error:", err);
       if (!isMountedRef.current) return;
       setStatus("error");
-      setStatusMessage("Connection error with screen relay.");
+      setStatusMessage("Connection error with screen relay. Check network connection.");
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (!isMountedRef.current) return;
       if (status !== "stopped") {
-        setStatus("stopped");
-        setStatusMessage("Screen stream session closed.");
+        if (event.code !== 1000 && event.code !== 1005) {
+          setStatus("error");
+          setStatusMessage(`Relay connection closed (${event.code}). Click 'Restart Stream' below.`);
+        } else {
+          setStatus("stopped");
+          setStatusMessage("Screen stream session closed.");
+        }
       }
     };
   };
@@ -342,6 +388,8 @@ export default function ScreenStreamView({
                   ? "bg-emerald-500 animate-ping absolute opacity-75"
                   : status === "waiting_device"
                   ? "bg-amber-400 animate-pulse absolute opacity-75"
+                  : status === "error"
+                  ? "bg-rose-500"
                   : "bg-slate-600"
               }`}
             />
@@ -351,6 +399,8 @@ export default function ScreenStreamView({
                   ? "bg-emerald-500"
                   : status === "waiting_device"
                   ? "bg-amber-400"
+                  : status === "error"
+                  ? "bg-rose-500"
                   : "bg-slate-500"
               }`}
             />
@@ -358,11 +408,19 @@ export default function ScreenStreamView({
           <div>
             <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-1.5">
               <span>{deviceName || "Target Device"}</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 uppercase tracking-wider">
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                status === "streaming"
+                  ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                  : status === "error"
+                  ? "bg-rose-950 text-rose-400 border border-rose-800"
+                  : "bg-slate-800 text-slate-400"
+              }`}>
                 {status === "streaming" ? "LIVE" : status}
               </span>
             </h3>
-            <p className="text-[11px] text-slate-400 truncate max-w-[220px]">
+            <p className={`text-[11px] truncate max-w-[220px] ${
+              status === "error" ? "text-rose-400 font-medium" : "text-slate-400"
+            }`}>
               {statusMessage}
             </p>
           </div>
@@ -473,23 +531,37 @@ export default function ScreenStreamView({
             /* Standby / Loading / Radar state */
             <div className="flex flex-col items-center justify-center text-center p-6 space-y-4">
               <div className="relative flex items-center justify-center">
-                <div className="w-16 h-16 rounded-full border border-sky-500/20 animate-ping absolute" />
-                <div className="w-12 h-12 rounded-full border border-sky-400/40 animate-pulse absolute" />
-                <div className="w-10 h-10 rounded-full bg-sky-500/10 border border-sky-500/60 flex items-center justify-center">
-                  <svg className="w-5 h-5 text-sky-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                </div>
+                {status === "error" ? (
+                  <div className="w-12 h-12 rounded-full bg-rose-950 border border-rose-600 flex items-center justify-center">
+                    <svg className="w-6 h-6 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                ) : (
+                  <>
+                    <div className="w-16 h-16 rounded-full border border-sky-500/20 animate-ping absolute" />
+                    <div className="w-12 h-12 rounded-full border border-sky-400/40 animate-pulse absolute" />
+                    <div className="w-10 h-10 rounded-full bg-sky-500/10 border border-sky-500/60 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-sky-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="space-y-1">
-                <p className="text-xs font-semibold text-slate-200">
-                  {status === "waiting_device"
+                <p className={`text-xs font-semibold ${
+                  status === "error" ? "text-rose-400" : "text-slate-200"
+                }`}>
+                  {status === "error"
+                    ? "Streaming Error"
+                    : status === "waiting_device"
                     ? "Connecting to Screen Pipe..."
                     : status === "connecting_ws"
                     ? "Connecting to Relay..."
@@ -497,14 +569,12 @@ export default function ScreenStreamView({
                     ? "Stream Inactive"
                     : "Connecting..."}
                 </p>
-                <p className="text-[11px] text-slate-400 max-w-[200px] leading-relaxed">
-                  {status === "stopped"
-                    ? "Click 'Restart Stream' below to resume live view."
-                    : "Waking target phone to stream live screen & audio silently."}
+                <p className="text-[11px] text-slate-400 max-w-[220px] leading-relaxed break-words">
+                  {statusMessage}
                 </p>
               </div>
 
-              {status === "stopped" && (
+              {(status === "stopped" || status === "error") && (
                 <button
                   onClick={startStream}
                   className="px-3 py-1.5 text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition shadow-sm"
@@ -515,7 +585,7 @@ export default function ScreenStreamView({
 
               {status === "waiting_device" && (
                 <div className="text-[10px] text-slate-500 bg-slate-900/60 rounded p-2 max-w-[220px]">
-                  💡 Tip: The target phone must have SPApp Accessibility Service enabled in Android Settings.
+                  💡 Tip: Ensure target phone has SPApp Accessibility Service ON and the latest app installed.
                 </div>
               )}
             </div>

@@ -1,12 +1,13 @@
-const { WebSocketServer } = require("ws");
+const { WebSocketServer, WebSocket } = require("ws");
 const jwt = require("jsonwebtoken");
 const url = require("url");
 
 /**
- * Live Device-to-Admin Screen Streaming WebSocket Relay
+ * Live Device-to-Admin Screen & Audio Streaming WebSocket Relay
  *
- * Transmits real-time screen frames (JPEG binary frames) from target device
- * to admin dashboard popup window with zero disk storage or database persistence.
+ * Transmits real-time screen frames (JPEG binary frames) and ambient PCM audio
+ * from target device to admin dashboard popup window with zero disk storage
+ * or database persistence.
  *
  * Path:
  *   /ws/screen-stream?role=admin|device&token=<jwt>&deviceId=<id>
@@ -23,6 +24,7 @@ function attachScreenRelay(httpServer) {
 
     const { role, token, deviceId } = query;
     if (!role || !token || !deviceId || !["admin", "device"].includes(role)) {
+      socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
       socket.destroy();
       return;
     }
@@ -31,21 +33,26 @@ function attachScreenRelay(httpServer) {
     try {
       payload = jwt.verify(token, process.env.JWT_SECRET);
     } catch {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
     }
 
     if (role === "device" && payload.role !== "device") {
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
       socket.destroy();
       return;
     }
     if (role === "admin" && payload.role === "device") {
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
       socket.destroy();
       return;
     }
 
+    const effectiveDeviceId = (role === "device" && payload.sub) ? payload.sub : deviceId;
+
     wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit("connection", ws, req, { role, deviceId });
+      wss.emit("connection", ws, req, { role, deviceId: effectiveDeviceId });
     });
   });
 
@@ -60,7 +67,7 @@ function attachScreenRelay(httpServer) {
       stream.adminWsSet.add(ws);
       console.log(`[screenRelay] Admin connected for device ${deviceId} (active viewers: ${stream.adminWsSet.size})`);
 
-      if (stream.deviceWs && stream.deviceWs.readyState === ws.OPEN) {
+      if (stream.deviceWs && stream.deviceWs.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "status", status: "streaming", message: "Device streaming active" }));
       } else {
         ws.send(JSON.stringify({ type: "status", status: "waiting_device", message: "Waiting for device screen stream..." }));
@@ -70,7 +77,7 @@ function attachScreenRelay(httpServer) {
         try {
           const parsed = JSON.parse(msg.toString());
           if (parsed.action === "stop") {
-            if (stream.deviceWs && stream.deviceWs.readyState === ws.OPEN) {
+            if (stream.deviceWs && stream.deviceWs.readyState === WebSocket.OPEN) {
               stream.deviceWs.send(JSON.stringify({ action: "stop" }));
             }
           }
@@ -83,7 +90,7 @@ function attachScreenRelay(httpServer) {
         stream.adminWsSet.delete(ws);
         console.log(`[screenRelay] Admin disconnected for device ${deviceId} (remaining: ${stream.adminWsSet.size})`);
         if (stream.adminWsSet.size === 0) {
-          if (stream.deviceWs && stream.deviceWs.readyState === ws.OPEN) {
+          if (stream.deviceWs && stream.deviceWs.readyState === WebSocket.OPEN) {
             stream.deviceWs.send(JSON.stringify({ action: "stop" }));
           }
           if (!stream.deviceWs) {
@@ -100,7 +107,7 @@ function attachScreenRelay(httpServer) {
       stream.deviceWs = ws;
 
       for (const admin of stream.adminWsSet) {
-        if (admin.readyState === ws.OPEN) {
+        if (admin.readyState === WebSocket.OPEN) {
           admin.send(JSON.stringify({ type: "status", status: "streaming", message: "Device screen stream started" }));
         }
       }
@@ -108,7 +115,7 @@ function attachScreenRelay(httpServer) {
       ws.on("message", (data, isBinary) => {
         // Broadcast binary frame/audio to all connected admins watching this device
         for (const admin of stream.adminWsSet) {
-          if (admin.readyState === ws.OPEN) {
+          if (admin.readyState === WebSocket.OPEN) {
             // Buffer bloat prevention: drop stale frames if admin client socket is backed up
             if (isBinary && admin.bufferedAmount > 32 * 1024) {
               continue;
@@ -124,7 +131,7 @@ function attachScreenRelay(httpServer) {
           stream.deviceWs = null;
         }
         for (const admin of stream.adminWsSet) {
-          if (admin.readyState === ws.OPEN) {
+          if (admin.readyState === WebSocket.OPEN) {
             admin.send(JSON.stringify({ type: "status", status: "device_stopped", message: "Device stopped screen streaming" }));
           }
         }

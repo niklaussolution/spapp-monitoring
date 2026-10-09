@@ -210,22 +210,27 @@ object ScreenStreamManager {
                                 val hardwareBuffer = screenshotResult.hardwareBuffer
                                 val colorSpace = screenshotResult.colorSpace
                                 try {
-                                    val bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, colorSpace)
-                                    if (bitmap != null) {
-                                        val scaled = downscaleBitmap(bitmap, TARGET_MAX_DIMENSION)
-                                        val out = ByteArrayOutputStream()
-                                        scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
-                                        val jpegBytes = out.toByteArray()
+                                    val hwBitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, colorSpace)
+                                    if (hwBitmap != null) {
+                                        val swBitmap = hwBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                                        hwBitmap.recycle()
 
-                                        if (scaled != bitmap) scaled.recycle()
-                                        bitmap.recycle()
+                                        if (swBitmap != null) {
+                                            val scaled = downscaleBitmap(swBitmap, TARGET_MAX_DIMENSION)
+                                            val out = ByteArrayOutputStream()
+                                            scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+                                            val jpegBytes = out.toByteArray()
 
-                                        if (isStreaming.get() && ws.queueSize() <= 48 * 1024) {
-                                            // Prepend 0x01 packet type header
-                                            val packet = ByteArray(1 + jpegBytes.size)
-                                            packet[0] = PACKET_TYPE_VIDEO
-                                            System.arraycopy(jpegBytes, 0, packet, 1, jpegBytes.size)
-                                            ws.send(packet.toByteString())
+                                            if (scaled != swBitmap) scaled.recycle()
+                                            swBitmap.recycle()
+
+                                            if (isStreaming.get() && ws.queueSize() <= 48 * 1024) {
+                                                // Prepend 0x01 packet type header
+                                                val packet = ByteArray(1 + jpegBytes.size)
+                                                packet[0] = PACKET_TYPE_VIDEO
+                                                System.arraycopy(jpegBytes, 0, packet, 1, jpegBytes.size)
+                                                ws.send(packet.toByteString())
+                                            }
                                         }
                                     }
                                 } catch (e: Exception) {
