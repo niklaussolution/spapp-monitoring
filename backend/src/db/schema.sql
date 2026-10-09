@@ -147,9 +147,11 @@ CREATE TABLE IF NOT EXISTS sms_logs (
   direction      VARCHAR(10) NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
   counterparty   VARCHAR(50) NOT NULL,   -- phone number
   message_at     TIMESTAMPTZ NOT NULL,
+  body           TEXT,                   -- message content text
   synced_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_sms_logs_device ON sms_logs(device_id, message_at DESC);
+ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS body TEXT;
 
 -- ------------------------------------------------------------
 -- Call logs: metadata only. No audio, no recordings.

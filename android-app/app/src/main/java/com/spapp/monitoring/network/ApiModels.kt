@@ -46,7 +46,8 @@ data class AppUsageSyncRequest(val entries: List<AppUsageEntryDto>)
 data class SmsLogEntryDto(
     val direction: String,
     val counterparty: String,
-    val messageAt: String // ISO-8601
+    val messageAt: String, // ISO-8601
+    val body: String? = null
 )
 data class SmsLogSyncRequest(val entries: List<SmsLogEntryDto>)
 

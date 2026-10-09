@@ -147,9 +147,9 @@ router.post(
         await client.query("BEGIN");
         for (const e of req.body.entries) {
           await client.query(
-            `INSERT INTO sms_logs (device_id, direction, counterparty, message_at)
-             VALUES ($1, $2, $3, $4)`,
-            [req.device.deviceId, e.direction, e.counterparty, e.messageAt]
+            `INSERT INTO sms_logs (device_id, direction, counterparty, message_at, body)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [req.device.deviceId, e.direction, e.counterparty, e.messageAt, e.body || null]
           );
         }
         await client.query("COMMIT");

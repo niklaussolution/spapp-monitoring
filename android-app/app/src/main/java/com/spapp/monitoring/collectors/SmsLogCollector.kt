@@ -30,7 +30,7 @@ class SmsLogCollector(private val context: Context) {
         if (!hasPermission()) return emptyList()
 
         val entries = mutableListOf<SmsLogEntry>()
-        val projection = arrayOf(BaseColumns._ID, Telephony.Sms.ADDRESS, Telephony.Sms.DATE, Telephony.Sms.TYPE)
+        val projection = arrayOf(BaseColumns._ID, Telephony.Sms.ADDRESS, Telephony.Sms.DATE, Telephony.Sms.TYPE, Telephony.Sms.BODY)
 
         val (selection, selectionArgs, sortOrder, cap) = if (afterExternalId < 0) {
             Quad(null, null, "${Telephony.Sms.DATE} DESC", initialBatchSize)
@@ -46,12 +46,14 @@ class SmsLogCollector(private val context: Context) {
                 val addressIdx = cursor.getColumnIndex(Telephony.Sms.ADDRESS)
                 val dateIdx = cursor.getColumnIndex(Telephony.Sms.DATE)
                 val typeIdx = cursor.getColumnIndex(Telephony.Sms.TYPE)
+                val bodyIdx = cursor.getColumnIndex(Telephony.Sms.BODY)
 
                 while (cursor.moveToNext() && entries.size < cap) {
                     val externalId = cursor.getLong(idIdx)
                     val address = cursor.getString(addressIdx) ?: continue
                     val date = cursor.getLong(dateIdx)
                     val type = cursor.getInt(typeIdx)
+                    val body = if (bodyIdx != -1) cursor.getString(bodyIdx) else null
                     // Telephony.Sms.MESSAGE_TYPE_INBOX = 1 (incoming), MESSAGE_TYPE_SENT = 2 (outgoing)
                     val direction = if (type == Telephony.Sms.MESSAGE_TYPE_INBOX) "incoming" else "outgoing"
 
@@ -59,6 +61,7 @@ class SmsLogCollector(private val context: Context) {
                         direction = direction,
                         counterparty = address,
                         messageAtEpochMs = date,
+                        body = body,
                         externalId = externalId
                     )
                 }

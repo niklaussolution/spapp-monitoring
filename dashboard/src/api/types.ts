@@ -95,9 +95,11 @@ export interface AppUsageEntry {
 }
 
 export interface SmsLogEntry {
+  id?: number | string;
   direction: string;
   counterparty: string;
   message_at: string;
+  body?: string | null;
 }
 
 export interface WebHistoryEntry {
