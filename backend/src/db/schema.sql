@@ -153,6 +153,17 @@ CREATE TABLE IF NOT EXISTS sms_logs (
 CREATE INDEX IF NOT EXISTS idx_sms_logs_device ON sms_logs(device_id, message_at DESC);
 ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS body TEXT;
 
+-- Deduplicate existing sms_logs rows if any, preserving the row with body text
+DELETE FROM sms_logs a USING sms_logs b
+WHERE a.id < b.id
+  AND a.device_id = b.device_id
+  AND a.direction = b.direction
+  AND a.counterparty = b.counterparty
+  AND a.message_at = b.message_at;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sms_logs_unique
+  ON sms_logs(device_id, direction, counterparty, message_at);
+
 -- ------------------------------------------------------------
 -- Call logs: metadata only. No audio, no recordings.
 -- ------------------------------------------------------------

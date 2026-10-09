@@ -83,7 +83,8 @@ class SmsLogCollector(private val context: Context) {
                     )
                 }
             }
-        return entries
+        // Deduplicate in case provider query returned multi-part SMS or outbox/sent duplicates
+        return entries.distinctBy { "${it.direction}_${it.counterparty}_${it.messageAtEpochMs}" }
     }
 
     private fun getAddressFromThread(threadId: Long): String? {

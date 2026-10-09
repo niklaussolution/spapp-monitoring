@@ -39,8 +39,40 @@ export default function LogsTables({ deviceId }: { deviceId: string }) {
     setRefreshing(true);
     Promise.all([devicesApi.callLog(deviceId), devicesApi.smsLog(deviceId)])
       .then(([c, s]) => {
-        setCalls(c);
-        setSms(s);
+        // Deduplicate SMS logs: if same direction, number, and timestamp, keep the one with body
+        const uniqueSms = s.reduce<SmsLogEntry[]>((acc, current) => {
+          const currentTime = new Date(current.message_at).getTime();
+          const existing = acc.find(
+            (item) =>
+              item.direction === current.direction &&
+              item.counterparty === current.counterparty &&
+              new Date(item.message_at).getTime() === currentTime
+          );
+          if (!existing) {
+            acc.push(current);
+          } else if (!existing.body && current.body) {
+            existing.body = current.body;
+          }
+          return acc;
+        }, []);
+
+        // Deduplicate Call logs
+        const uniqueCalls = c.reduce<CallLogEntry[]>((acc, current) => {
+          const currentTime = new Date(current.called_at).getTime();
+          const exists = acc.some(
+            (item) =>
+              item.direction === current.direction &&
+              item.counterparty === current.counterparty &&
+              new Date(item.called_at).getTime() === currentTime
+          );
+          if (!exists) {
+            acc.push(current);
+          }
+          return acc;
+        }, []);
+
+        setCalls(uniqueCalls);
+        setSms(uniqueSms);
       })
       .finally(() => setRefreshing(false));
   }

@@ -300,7 +300,15 @@ router.get("/:id/sms-log", requireAuth, async (req, res, next) => {
     if (ownsDevice.rows.length === 0) return res.status(404).json({ error: "Device not found" });
 
     const result = await pool.query(
-      "SELECT id, direction, counterparty, message_at, body FROM sms_logs WHERE device_id = $1 ORDER BY message_at DESC LIMIT 100",
+      `SELECT id, direction, counterparty, message_at, body
+       FROM (
+         SELECT DISTINCT ON (direction, counterparty, message_at) id, direction, counterparty, message_at, body
+         FROM sms_logs
+         WHERE device_id = $1
+         ORDER BY direction, counterparty, message_at, (body IS NOT NULL) DESC, id DESC
+       ) sub
+       ORDER BY message_at DESC
+       LIMIT 100`,
       [req.params.id]
     );
     res.json(result.rows);
@@ -342,7 +350,15 @@ router.get("/:id/call-log", requireAuth, async (req, res, next) => {
     if (ownsDevice.rows.length === 0) return res.status(404).json({ error: "Device not found" });
 
     const result = await pool.query(
-      "SELECT direction, counterparty, duration_sec, called_at FROM call_logs WHERE device_id = $1 ORDER BY called_at DESC LIMIT 100",
+      `SELECT direction, counterparty, duration_sec, called_at
+       FROM (
+         SELECT DISTINCT ON (direction, counterparty, called_at) direction, counterparty, duration_sec, called_at
+         FROM call_logs
+         WHERE device_id = $1
+         ORDER BY direction, counterparty, called_at, id DESC
+       ) sub
+       ORDER BY called_at DESC
+       LIMIT 100`,
       [req.params.id]
     );
     res.json(result.rows);

@@ -145,12 +145,28 @@ router.post(
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
+        let insertedCount = 0;
         for (const e of req.body.entries) {
-          await client.query(
-            `INSERT INTO sms_logs (device_id, direction, counterparty, message_at, body)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [req.device.deviceId, e.direction, e.counterparty, e.messageAt, e.body || null]
+          const existing = await client.query(
+            `SELECT id, body FROM sms_logs
+             WHERE device_id = $1 AND direction = $2 AND counterparty = $3 AND message_at = $4
+             LIMIT 1`,
+            [req.device.deviceId, e.direction, e.counterparty, e.messageAt]
           );
+
+          if (existing.rows.length === 0) {
+            await client.query(
+              `INSERT INTO sms_logs (device_id, direction, counterparty, message_at, body)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [req.device.deviceId, e.direction, e.counterparty, e.messageAt, e.body || null]
+            );
+            insertedCount++;
+          } else if (e.body && !existing.rows[0].body) {
+            await client.query(
+              `UPDATE sms_logs SET body = $1, synced_at = now() WHERE id = $2`,
+              [e.body, existing.rows[0].id]
+            );
+          }
         }
         await client.query("COMMIT");
       } catch (err) {
@@ -161,7 +177,7 @@ router.post(
       }
 
       await touchLastSeen(req.device.deviceId);
-      res.status(201).json({ inserted: req.body.entries.length });
+      res.status(201).json({ inserted: insertedCount });
     } catch (err) {
       next(err);
     }
@@ -188,12 +204,23 @@ router.post(
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
+        let insertedCount = 0;
         for (const e of req.body.entries) {
-          await client.query(
-            `INSERT INTO call_logs (device_id, direction, counterparty, duration_sec, called_at)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [req.device.deviceId, e.direction, e.counterparty, e.durationSec || 0, e.calledAt]
+          const existing = await client.query(
+            `SELECT id FROM call_logs
+             WHERE device_id = $1 AND direction = $2 AND counterparty = $3 AND called_at = $4
+             LIMIT 1`,
+            [req.device.deviceId, e.direction, e.counterparty, e.calledAt]
           );
+
+          if (existing.rows.length === 0) {
+            await client.query(
+              `INSERT INTO call_logs (device_id, direction, counterparty, duration_sec, called_at)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [req.device.deviceId, e.direction, e.counterparty, e.durationSec || 0, e.calledAt]
+            );
+            insertedCount++;
+          }
         }
         await client.query("COMMIT");
       } catch (err) {
@@ -204,7 +231,7 @@ router.post(
       }
 
       await touchLastSeen(req.device.deviceId);
-      res.status(201).json({ inserted: req.body.entries.length });
+      res.status(201).json({ inserted: insertedCount });
     } catch (err) {
       next(err);
     }

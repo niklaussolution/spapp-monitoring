@@ -15,7 +15,7 @@ import androidx.room.RoomDatabase
         PendingSyncItem::class, AppUsageEntry::class, SmsLogEntry::class, CallLogEntry::class,
         WebHistoryEntry::class,
     ],
-    version = 6, // v6: added body to SmsLogEntry
+    version = 7, // v7: added unique index on SmsLogEntry (direction, counterparty, messageAtEpochMs)
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
