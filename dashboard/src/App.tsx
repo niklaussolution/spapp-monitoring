@@ -10,6 +10,7 @@ import DeviceDetailPage from "./pages/DeviceDetailPage";
 import DeviceArchivePage from "./pages/DeviceArchivePage";
 import AdminPage from "./pages/AdminPage";
 import ScreenStreamPage from "./pages/ScreenStreamPage";
+import CameraStreamPage from "./pages/CameraStreamPage";
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
 
           <Route element={<ProtectedRoute />}>
             <Route path="/devices/:id/screen-stream" element={<ScreenStreamPage />} />
+            <Route path="/devices/:id/camera-stream" element={<CameraStreamPage />} />
             <Route element={<Layout />}>
               <Route path="/devices" element={<DevicesListPage />} />
               <Route path="/devices/:id" element={<DeviceDetailPage />} />

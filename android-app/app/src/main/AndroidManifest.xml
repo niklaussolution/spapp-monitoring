@@ -23,9 +23,14 @@
     <!-- Remote lock (Phase 6) -->
     <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
 
-    <!-- Live screen stream audio & wake lock to prevent background network throttling -->
+    <!-- Live screen & camera stream audio, camera hardware, and wake lock -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
 
     <!-- Boot-time re-scheduling of periodic sync jobs -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -140,6 +145,12 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- Live camera streaming service (foreground service for background camera access) -->
+        <service
+            android:name=".camerastream.CameraStreamService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
 
     </application>
 </manifest>

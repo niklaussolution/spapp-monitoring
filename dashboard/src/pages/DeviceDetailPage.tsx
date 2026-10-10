@@ -5,6 +5,7 @@ import type { Device } from "../api/types";
 import FeatureFlagsCard from "../components/FeatureFlagsCard";
 import RemoteActionsCard from "../components/RemoteActionsCard";
 import ScreenStreamCard from "../components/ScreenStreamCard";
+import CameraStreamCard from "../components/CameraStreamCard";
 import LocationCard from "../components/LocationCard";
 import GeofencesCard from "../components/GeofencesCard";
 import AppUsageChart from "../components/AppUsageChart";
@@ -20,6 +21,7 @@ export default function DeviceDetailPage() {
   const [device, setDevice] = useState<Device | null>(null);
   const [locationRefreshKey, setLocationRefreshKey] = useState(0);
   const [isStreamActive, setIsStreamActive] = useState(false);
+  const [isCameraStreamActive, setIsCameraStreamActive] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
 
   useEffect(() => {
@@ -89,12 +91,24 @@ export default function DeviceDetailPage() {
           onToggleActive={setIsStreamActive}
         />
 
+        <CameraStreamCard
+          deviceId={id}
+          deviceName={device.device_label}
+          isActive={isCameraStreamActive}
+          onToggleActive={setIsCameraStreamActive}
+        />
+
         <RemoteActionsCard
           deviceId={id}
           onLocationUpdated={() => setLocationRefreshKey((k) => k + 1)}
           onStartStream={() => {
             setIsStreamActive(true);
             const el = document.getElementById("live-screen-card");
+            if (el) el.scrollIntoView({ behavior: "smooth" });
+          }}
+          onStartCamera={() => {
+            setIsCameraStreamActive(true);
+            const el = document.getElementById("live-camera-card");
             if (el) el.scrollIntoView({ behavior: "smooth" });
           }}
         />
