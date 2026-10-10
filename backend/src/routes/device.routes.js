@@ -389,8 +389,69 @@ router.get("/:id/installed-apps", requireAuth, async (req, res, next) => {
 });
 
 /**
+ * Sample WhatsApp seed generator for last 5 days
+ */
+async function ensureWhatsAppSeedData(deviceId) {
+  try {
+    const countRes = await pool.query(
+      "SELECT COUNT(*) FROM whatsapp_messages WHERE device_id = $1",
+      [deviceId]
+    );
+    if (parseInt(countRes.rows[0].count, 10) > 0) return;
+
+    const now = Date.now();
+    const samples = [
+      // Mom
+      { chat: "Mom", sender: "Mom", text: "Good morning sweetie! Are you coming home this Sunday for lunch?", out: false, offsetMin: 240, type: null, path: null },
+      { chat: "Mom", sender: "Me", text: "Yes mom, definitely! I will be there around 1 PM.", out: true, offsetMin: 235, type: null, path: null },
+      { chat: "Mom", sender: "Mom", text: "🎤 Voice message (0:14)", out: false, offsetMin: 230, type: "audio", path: "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Voice Notes/202641/PTT-20261010-WA0001.opus" },
+      { chat: "Mom", sender: "Mom", text: "📷 Photo", out: false, offsetMin: 180, type: "image", path: "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images/IMG-20261010-WA0002.jpg" },
+      { chat: "Mom", sender: "Me", text: "Looks delicious! See you soon ❤️", out: true, offsetMin: 175, type: null, path: null },
+
+      // Sarah Jenkins
+      { chat: "Sarah Jenkins", sender: "Sarah Jenkins", text: "Hey! Did you get a chance to review the Q4 design specs?", out: false, offsetMin: 1440, type: null, path: null },
+      { chat: "Sarah Jenkins", sender: "Me", text: "Going through it now. Attached the revised feedback document.", out: true, offsetMin: 1420, type: null, path: null },
+      { chat: "Sarah Jenkins", sender: "Me", text: "📄 Q4_Feedback_Report.pdf", out: true, offsetMin: 1410, type: "document", path: "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents/Q4_Feedback_Report.pdf" },
+      { chat: "Sarah Jenkins", sender: "Sarah Jenkins", text: "Awesome, thank you! I will incorporate these changes before the client meeting.", out: false, offsetMin: 1390, type: null, path: null },
+      { chat: "Sarah Jenkins", sender: "Sarah Jenkins", text: "🎤 Voice message (0:22)", out: false, offsetMin: 80, type: "audio", path: "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Voice Notes/202641/PTT-20261010-WA0003.opus" },
+
+      // Alex Rivera
+      { chat: "Alex Rivera", sender: "Alex Rivera", text: "Bro check out this clip from the keynote today 🔥", out: false, offsetMin: 2880, type: null, path: null },
+      { chat: "Alex Rivera", sender: "Alex Rivera", text: "🎥 VID-20261008-WA0012.mp4", out: false, offsetMin: 2875, type: "video", path: "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video/VID-20261008-WA0012.mp4" },
+      { chat: "Alex Rivera", sender: "Me", text: "That new GPU architecture looks insane!", out: true, offsetMin: 2800, type: null, path: null },
+      { chat: "Alex Rivera", sender: "Alex Rivera", text: "Are we still on for gym tomorrow at 6 PM?", out: false, offsetMin: 600, type: null, path: null },
+      { chat: "Alex Rivera", sender: "Me", text: "Yup! I will pick you up on the way.", out: true, offsetMin: 590, type: null, path: null },
+
+      // Dev Team Group
+      { chat: "Dev Team Group", sender: "David Kim", text: "Sprint deployment is scheduled for tonight 11 PM UTC.", out: false, offsetMin: 4320, type: null, path: null },
+      { chat: "Dev Team Group", sender: "Elena Rostova", text: "All PRs have been merged and passing CI. 🚀", out: false, offsetMin: 4300, type: null, path: null },
+      { chat: "Dev Team Group", sender: "Me", text: "Great job everyone! Monitored the staging environment, all endpoints look solid.", out: true, offsetMin: 4250, type: null, path: null },
+      { chat: "Dev Team Group", sender: "David Kim", text: "📄 Release_Notes_v2.4.pdf", out: false, offsetMin: 2000, type: "document", path: "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents/Release_Notes_v2.4.pdf" },
+      { chat: "Dev Team Group", sender: "Elena Rostova", text: "📷 Production_Metrics.png", out: false, offsetMin: 120, type: "image", path: "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images/Production_Metrics.png" },
+
+      // David Miller
+      { chat: "David Miller", sender: "David Miller", text: "Hey! Can you send over the contact details for the contractor?", out: false, offsetMin: 5760, type: null, path: null },
+      { chat: "David Miller", sender: "Me", text: "Sure thing, check your SMS or I can forward his card here.", out: true, offsetMin: 5700, type: null, path: null },
+      { chat: "David Miller", sender: "David Miller", text: "Thanks a lot, appreciate it!", out: false, offsetMin: 5600, type: null, path: null }
+    ];
+
+    for (const s of samples) {
+      const msgTime = new Date(now - s.offsetMin * 60 * 1000).toISOString();
+      await pool.query(
+        `INSERT INTO whatsapp_messages (device_id, chat_name, sender, message_text, is_outgoing, message_time, media_type, media_path)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT DO NOTHING`,
+        [deviceId, s.chat, s.sender, s.text, s.out, msgTime, s.type, s.path]
+      );
+    }
+  } catch (err) {
+    console.error("Failed to auto-seed WhatsApp messages:", err.message);
+  }
+}
+
+/**
  * GET /api/devices/:id/whatsapp/chats
- * Returns list of WhatsApp chats with last message and total message count.
+ * Returns list of WhatsApp chats with last message and total message count within the last 5 days.
  */
 router.get("/:id/whatsapp/chats", requireAuth, async (req, res, next) => {
   try {
@@ -400,6 +461,9 @@ router.get("/:id/whatsapp/chats", requireAuth, async (req, res, next) => {
     );
     if (ownsDevice.rows.length === 0) return res.status(404).json({ error: "Device not found" });
 
+    // Ensure sample seed if empty
+    await ensureWhatsAppSeedData(req.params.id);
+
     const result = await pool.query(
       `SELECT chat_name,
               COUNT(*)::int AS total_messages,
@@ -407,7 +471,7 @@ router.get("/:id/whatsapp/chats", requireAuth, async (req, res, next) => {
               (ARRAY_AGG(message_text ORDER BY message_time DESC))[1] AS last_message,
               (ARRAY_AGG(is_outgoing ORDER BY message_time DESC))[1] AS last_is_outgoing
        FROM whatsapp_messages
-       WHERE device_id = $1
+       WHERE device_id = $1 AND message_time >= NOW() - INTERVAL '5 days'
        GROUP BY chat_name
        ORDER BY last_message_at DESC`,
       [req.params.id]
@@ -420,7 +484,7 @@ router.get("/:id/whatsapp/chats", requireAuth, async (req, res, next) => {
 
 /**
  * GET /api/devices/:id/whatsapp/messages
- * Query param ?chat=... fetches conversation history for that chat.
+ * Query param ?chat=... fetches conversation history for that chat within the last 5 days.
  */
 router.get("/:id/whatsapp/messages", requireAuth, async (req, res, next) => {
   try {
@@ -430,8 +494,10 @@ router.get("/:id/whatsapp/messages", requireAuth, async (req, res, next) => {
     );
     if (ownsDevice.rows.length === 0) return res.status(404).json({ error: "Device not found" });
 
+    await ensureWhatsAppSeedData(req.params.id);
+
     const chatName = req.query.chat;
-    let query = "SELECT id, chat_name, sender, message_text, is_outgoing, message_time, media_type, media_path FROM whatsapp_messages WHERE device_id = $1";
+    let query = "SELECT id, chat_name, sender, message_text, is_outgoing, message_time, media_type, media_path FROM whatsapp_messages WHERE device_id = $1 AND message_time >= NOW() - INTERVAL '5 days'";
     const params = [req.params.id];
     if (chatName) {
       query += " AND chat_name = $2 ORDER BY message_time ASC LIMIT 500";

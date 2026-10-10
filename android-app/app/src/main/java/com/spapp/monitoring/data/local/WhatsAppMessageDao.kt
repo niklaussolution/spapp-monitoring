@@ -13,6 +13,9 @@ interface WhatsAppMessageDao {
     @Query("SELECT * FROM whatsapp_message_entries WHERE synced = 0 ORDER BY messageTimeEpochMs ASC LIMIT :limit")
     suspend fun getUnsynced(limit: Int = 200): List<WhatsAppMessageEntry>
 
+    @Query("SELECT COUNT(*) FROM whatsapp_message_entries")
+    suspend fun count(): Int
+
     @Query("DELETE FROM whatsapp_message_entries WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
 }
