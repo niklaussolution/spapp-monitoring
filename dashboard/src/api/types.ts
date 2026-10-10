@@ -117,6 +117,25 @@ export interface CallLogEntry {
   contact_name?: string | null;
 }
 
+export interface WhatsAppChatSummary {
+  chat_name: string;
+  total_messages: number;
+  last_message_at: string;
+  last_message: string | null;
+  last_is_outgoing: boolean;
+}
+
+export interface WhatsAppMessage {
+  id: number | string;
+  chat_name: string;
+  sender: string | null;
+  message_text: string;
+  is_outgoing: boolean;
+  message_time: string;
+  media_type?: string | null;
+  media_path?: string | null;
+}
+
 export interface InstalledApp {
   package_name: string;
   app_name: string | null;

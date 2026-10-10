@@ -602,4 +602,55 @@ router.post(
   }
 );
 
+/**
+ * POST /api/sync/whatsapp-messages
+ * body: { entries: [{ chatName, sender, messageText, isOutgoing, messageTime, mediaType, mediaPath }] }
+ */
+router.post(
+  "/whatsapp-messages",
+  [body("entries").isArray({ min: 1 })],
+  async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ error: "Validation failed", details: errors.array() });
+
+    try {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        let insertedCount = 0;
+        for (const e of req.body.entries) {
+          if (!e.chatName || !e.messageText) continue;
+          const result = await client.query(
+            `INSERT INTO whatsapp_messages (device_id, chat_name, sender, message_text, is_outgoing, message_time, media_type, media_path)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (device_id, chat_name, message_text, message_time, is_outgoing) DO NOTHING
+             RETURNING id`,
+            [
+              req.device.deviceId,
+              e.chatName,
+              e.sender || null,
+              e.messageText,
+              Boolean(e.isOutgoing),
+              e.messageTime || new Date().toISOString(),
+              e.mediaType || null,
+              e.mediaPath || null,
+            ]
+          );
+          if (result.rows.length > 0) insertedCount++;
+        }
+        await client.query("COMMIT");
+        await touchLastSeen(req.device.deviceId);
+        res.status(201).json({ inserted: insertedCount });
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 module.exports = router;

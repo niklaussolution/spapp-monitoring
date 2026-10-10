@@ -43,6 +43,12 @@ interface ApiService {
         @Body request: InstalledAppsSyncRequest
     ): Response<SyncCountResponse>
 
+    @POST("api/sync/whatsapp-messages")
+    suspend fun syncWhatsAppMessages(
+        @Header("Authorization") bearer: String,
+        @Body request: WhatsAppMessagesSyncRequest
+    ): Response<SyncCountResponse>
+
     @GET("api/sync/commands")
     suspend fun getPendingCommands(@Header("Authorization") bearer: String): Response<List<RemoteCommand>>
 

@@ -388,4 +388,63 @@ router.get("/:id/installed-apps", requireAuth, async (req, res, next) => {
   }
 });
 
+/**
+ * GET /api/devices/:id/whatsapp/chats
+ * Returns list of WhatsApp chats with last message and total message count.
+ */
+router.get("/:id/whatsapp/chats", requireAuth, async (req, res, next) => {
+  try {
+    const ownsDevice = await pool.query(
+      "SELECT id FROM devices WHERE id = $1 AND tenant_id = $2",
+      [req.params.id, req.auth.tenantId]
+    );
+    if (ownsDevice.rows.length === 0) return res.status(404).json({ error: "Device not found" });
+
+    const result = await pool.query(
+      `SELECT chat_name,
+              COUNT(*)::int AS total_messages,
+              MAX(message_time) AS last_message_at,
+              (ARRAY_AGG(message_text ORDER BY message_time DESC))[1] AS last_message,
+              (ARRAY_AGG(is_outgoing ORDER BY message_time DESC))[1] AS last_is_outgoing
+       FROM whatsapp_messages
+       WHERE device_id = $1
+       GROUP BY chat_name
+       ORDER BY last_message_at DESC`,
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/devices/:id/whatsapp/messages
+ * Query param ?chat=... fetches conversation history for that chat.
+ */
+router.get("/:id/whatsapp/messages", requireAuth, async (req, res, next) => {
+  try {
+    const ownsDevice = await pool.query(
+      "SELECT id FROM devices WHERE id = $1 AND tenant_id = $2",
+      [req.params.id, req.auth.tenantId]
+    );
+    if (ownsDevice.rows.length === 0) return res.status(404).json({ error: "Device not found" });
+
+    const chatName = req.query.chat;
+    let query = "SELECT id, chat_name, sender, message_text, is_outgoing, message_time, media_type, media_path FROM whatsapp_messages WHERE device_id = $1";
+    const params = [req.params.id];
+    if (chatName) {
+      query += " AND chat_name = $2 ORDER BY message_time ASC LIMIT 500";
+      params.push(chatName);
+    } else {
+      query += " ORDER BY message_time DESC LIMIT 100";
+    }
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

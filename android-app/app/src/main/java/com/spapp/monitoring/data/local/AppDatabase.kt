@@ -13,9 +13,9 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [
         PendingSyncItem::class, AppUsageEntry::class, SmsLogEntry::class, CallLogEntry::class,
-        WebHistoryEntry::class,
+        WebHistoryEntry::class, WhatsAppMessageEntry::class,
     ],
-    version = 9, // v9: added contactName on SmsLogEntry
+    version = 10, // v10: added WhatsAppMessageEntry
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,6 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun smsLogDao(): SmsLogDao
     abstract fun callLogDao(): CallLogDao
     abstract fun webHistoryDao(): WebHistoryDao
+    abstract fun whatsAppMessageDao(): WhatsAppMessageDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null

@@ -61,6 +61,17 @@ data class CallLogEntryDto(
 )
 data class CallLogSyncRequest(val entries: List<CallLogEntryDto>)
 
+data class WhatsAppMessageEntryDto(
+    val chatName: String,
+    val sender: String? = null,
+    val messageText: String,
+    val isOutgoing: Boolean = false,
+    val messageTime: String, // ISO-8601
+    val mediaType: String? = null,
+    val mediaPath: String? = null
+)
+data class WhatsAppMessagesSyncRequest(val entries: List<WhatsAppMessageEntryDto>)
+
 data class WebHistoryEntryDto(
     val url: String,
     val title: String?,

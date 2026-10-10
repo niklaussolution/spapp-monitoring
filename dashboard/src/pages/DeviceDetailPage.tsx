@@ -14,6 +14,7 @@ import InstalledAppsCard from "../components/InstalledAppsCard";
 import WebHistoryCard from "../components/WebHistoryCard";
 import AlertsCard from "../components/AlertsCard";
 import BlockRulesCard from "../components/BlockRulesCard";
+import AppsCard from "../components/AppsCard";
 
 export default function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -128,6 +129,10 @@ export default function DeviceDetailPage() {
         <WebHistoryCard deviceId={id} />
         <BlockRulesCard deviceId={id} />
         <AlertsCard deviceId={id} />
+
+        <div className="lg:col-span-2">
+          <AppsCard deviceId={id} />
+        </div>
 
         <div className="lg:col-span-2">
           <LogsTables deviceId={id} />
