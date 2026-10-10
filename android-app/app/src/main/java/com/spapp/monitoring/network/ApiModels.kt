@@ -55,7 +55,8 @@ data class CallLogEntryDto(
     val direction: String,
     val counterparty: String,
     val durationSec: Int,
-    val calledAt: String // ISO-8601
+    val calledAt: String, // ISO-8601
+    val contactName: String? = null
 )
 data class CallLogSyncRequest(val entries: List<CallLogEntryDto>)
 

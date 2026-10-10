@@ -225,7 +225,8 @@ object RealtimeLogObserverManager {
                                     direction = it.direction,
                                     counterparty = it.counterparty,
                                     durationSec = it.durationSec,
-                                    calledAt = Instant.ofEpochMilli(it.calledAtEpochMs).toString()
+                                    calledAt = Instant.ofEpochMilli(it.calledAtEpochMs).toString(),
+                                    contactName = it.contactName
                                 )
                             }
                             val response = ApiClient.service.syncCallLog(bearer, CallLogSyncRequest(dtos))

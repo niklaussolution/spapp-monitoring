@@ -174,9 +174,11 @@ CREATE TABLE IF NOT EXISTS call_logs (
   counterparty   VARCHAR(50) NOT NULL,   -- phone number
   duration_sec   INTEGER NOT NULL DEFAULT 0,
   called_at      TIMESTAMPTZ NOT NULL,
+  contact_name   VARCHAR(255),
   synced_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_call_logs_device ON call_logs(device_id, called_at DESC);
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS contact_name VARCHAR(255);
 
 -- ------------------------------------------------------------
 -- Installed apps inventory (snapshot, replaced on each sync).

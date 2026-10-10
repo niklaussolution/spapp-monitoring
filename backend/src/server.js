@@ -58,6 +58,12 @@ attachFileRelay(server);
 attachScreenRelay(server);
 attachCameraRelay(server);
 
+// Ensure call_logs has contact_name column
+const pool = require("./db/pool");
+pool
+  .query("ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS contact_name VARCHAR(255);")
+  .catch((err) => console.error("Auto-migration (call_logs.contact_name) warning:", err.message));
+
 server.listen(PORT, () => {
   console.log(`spapp-monitoring-backend listening on port ${PORT} (HTTP + WS file + screen + camera relay)`);
 });

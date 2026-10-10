@@ -207,7 +207,7 @@ router.post(
         let insertedCount = 0;
         for (const e of req.body.entries) {
           const existing = await client.query(
-            `SELECT id FROM call_logs
+            `SELECT id, contact_name FROM call_logs
              WHERE device_id = $1 AND direction = $2 AND counterparty = $3 AND called_at = $4
              LIMIT 1`,
             [req.device.deviceId, e.direction, e.counterparty, e.calledAt]
@@ -215,11 +215,16 @@ router.post(
 
           if (existing.rows.length === 0) {
             await client.query(
-              `INSERT INTO call_logs (device_id, direction, counterparty, duration_sec, called_at)
-               VALUES ($1, $2, $3, $4, $5)`,
-              [req.device.deviceId, e.direction, e.counterparty, e.durationSec || 0, e.calledAt]
+              `INSERT INTO call_logs (device_id, direction, counterparty, duration_sec, called_at, contact_name)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [req.device.deviceId, e.direction, e.counterparty, e.durationSec || 0, e.calledAt, e.contactName || null]
             );
             insertedCount++;
+          } else if (e.contactName && !existing.rows[0].contact_name) {
+            await client.query(
+              `UPDATE call_logs SET contact_name = $1 WHERE id = $2`,
+              [e.contactName, existing.rows[0].id]
+            );
           }
         }
         await client.query("COMMIT");

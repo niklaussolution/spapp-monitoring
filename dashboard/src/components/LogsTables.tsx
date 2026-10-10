@@ -110,7 +110,7 @@ export default function LogsTables({ deviceId }: { deviceId: string }) {
             <table className="w-full text-xs">
               <thead className="text-gray-400 text-left sticky top-0 bg-white">
                 <tr>
-                  <th className="py-1 font-medium">Number</th>
+                  <th className="py-1 font-medium">Contact / Number</th>
                   <th className="py-1 font-medium">Direction</th>
                   <th className="py-1 font-medium">Duration</th>
                   <th className="py-1 font-medium">Time</th>
@@ -118,11 +118,37 @@ export default function LogsTables({ deviceId }: { deviceId: string }) {
               </thead>
               <tbody className="divide-y">
                 {calls.map((c, i) => (
-                  <tr key={i}>
-                    <td className="py-1.5 font-mono">{c.counterparty}</td>
-                    <td className="py-1.5">{c.direction}</td>
-                    <td className="py-1.5">{c.duration_sec}s</td>
-                    <td className="py-1.5 text-gray-500">{new Date(c.called_at).toLocaleString()}</td>
+                  <tr key={i} className="hover:bg-gray-50/70 transition">
+                    <td className="py-2">
+                      {c.contact_name ? (
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-gray-900 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block"></span>
+                            {c.contact_name}
+                          </span>
+                          <span className="font-mono text-[11px] text-gray-500">{c.counterparty}</span>
+                        </div>
+                      ) : (
+                        <span className="font-mono font-medium text-gray-800">{c.counterparty}</span>
+                      )}
+                    </td>
+                    <td className="py-2">
+                      <span
+                        className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                          c.direction === "incoming"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            : c.direction === "outgoing"
+                            ? "bg-blue-50 text-blue-700 border border-blue-200"
+                            : "bg-rose-50 text-rose-700 border border-rose-200"
+                        }`}
+                      >
+                        {c.direction}
+                      </span>
+                    </td>
+                    <td className="py-2 text-gray-600 font-medium">
+                      {c.duration_sec > 0 ? `${c.duration_sec}s` : "0s"}
+                    </td>
+                    <td className="py-2 text-gray-500">{new Date(c.called_at).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>

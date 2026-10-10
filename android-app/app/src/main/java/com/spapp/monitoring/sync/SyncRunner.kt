@@ -511,7 +511,7 @@ class SyncRunner(private val context: Context) {
         if (unsynced.isEmpty()) return
 
         val dtos = unsynced.map {
-            CallLogEntryDto(it.direction, it.counterparty, it.durationSec, Instant.ofEpochMilli(it.calledAtEpochMs).toString())
+            CallLogEntryDto(it.direction, it.counterparty, it.durationSec, Instant.ofEpochMilli(it.calledAtEpochMs).toString(), it.contactName)
         }
         try {
             val response = ApiClient.service.syncCallLog(bearer, CallLogSyncRequest(dtos))

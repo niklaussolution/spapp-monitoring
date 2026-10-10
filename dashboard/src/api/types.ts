@@ -113,6 +113,7 @@ export interface CallLogEntry {
   counterparty: string;
   duration_sec: number;
   called_at: string;
+  contact_name?: string | null;
 }
 
 export interface InstalledApp {

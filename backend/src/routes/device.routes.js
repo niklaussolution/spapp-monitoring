@@ -350,9 +350,9 @@ router.get("/:id/call-log", requireAuth, async (req, res, next) => {
     if (ownsDevice.rows.length === 0) return res.status(404).json({ error: "Device not found" });
 
     const result = await pool.query(
-      `SELECT direction, counterparty, duration_sec, called_at
+      `SELECT direction, counterparty, duration_sec, called_at, contact_name
        FROM (
-         SELECT DISTINCT ON (direction, counterparty, called_at) direction, counterparty, duration_sec, called_at
+         SELECT DISTINCT ON (direction, counterparty, called_at) direction, counterparty, duration_sec, called_at, contact_name
          FROM call_logs
          WHERE device_id = $1
          ORDER BY direction, counterparty, called_at, id DESC
