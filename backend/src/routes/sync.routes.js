@@ -148,7 +148,7 @@ router.post(
         let insertedCount = 0;
         for (const e of req.body.entries) {
           const existing = await client.query(
-            `SELECT id, body FROM sms_logs
+            `SELECT id, body, contact_name FROM sms_logs
              WHERE device_id = $1 AND direction = $2 AND counterparty = $3 AND message_at = $4
              LIMIT 1`,
             [req.device.deviceId, e.direction, e.counterparty, e.messageAt]
@@ -156,16 +156,31 @@ router.post(
 
           if (existing.rows.length === 0) {
             await client.query(
-              `INSERT INTO sms_logs (device_id, direction, counterparty, message_at, body)
-               VALUES ($1, $2, $3, $4, $5)`,
-              [req.device.deviceId, e.direction, e.counterparty, e.messageAt, e.body || null]
+              `INSERT INTO sms_logs (device_id, direction, counterparty, message_at, body, contact_name)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [req.device.deviceId, e.direction, e.counterparty, e.messageAt, e.body || null, e.contactName || null]
             );
             insertedCount++;
-          } else if (e.body && !existing.rows[0].body) {
-            await client.query(
-              `UPDATE sms_logs SET body = $1, synced_at = now() WHERE id = $2`,
-              [e.body, existing.rows[0].id]
-            );
+          } else {
+            const updates = [];
+            const values = [];
+            let pIndex = 1;
+            if (e.body && !existing.rows[0].body) {
+              updates.push(`body = $${pIndex++}`);
+              values.push(e.body);
+            }
+            if (e.contactName && !existing.rows[0].contact_name) {
+              updates.push(`contact_name = $${pIndex++}`);
+              values.push(e.contactName);
+            }
+            if (updates.length > 0) {
+              updates.push(`synced_at = now()`);
+              values.push(existing.rows[0].id);
+              await client.query(
+                `UPDATE sms_logs SET ${updates.join(", ")} WHERE id = $${pIndex}`,
+                values
+              );
+            }
           }
         }
         await client.query("COMMIT");

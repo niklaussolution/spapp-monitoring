@@ -486,7 +486,7 @@ class SyncRunner(private val context: Context) {
         if (unsynced.isEmpty()) return
 
         val dtos = unsynced.map {
-            SmsLogEntryDto(it.direction, it.counterparty, Instant.ofEpochMilli(it.messageAtEpochMs).toString(), it.body)
+            SmsLogEntryDto(it.direction, it.counterparty, Instant.ofEpochMilli(it.messageAtEpochMs).toString(), it.body, it.contactName)
         }
         try {
             val response = ApiClient.service.syncSmsLog(bearer, SmsLogSyncRequest(dtos))

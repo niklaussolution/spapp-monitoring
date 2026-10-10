@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.BaseColumns
+import android.provider.ContactsContract
 import android.provider.Telephony
 import androidx.core.content.ContextCompat
 import com.spapp.monitoring.data.local.SmsLogEntry
@@ -28,6 +29,7 @@ class SmsLogCollector(private val context: Context) {
         if (!hasPermission()) return emptyList()
 
         val entries = mutableListOf<SmsLogEntry>()
+        val contactCache = mutableMapOf<String, String?>()
         val projection = arrayOf(
             BaseColumns._ID,
             Telephony.Sms.ADDRESS,
@@ -74,17 +76,50 @@ class SmsLogCollector(private val context: Context) {
                     // Telephony.Sms.MESSAGE_TYPE_INBOX = 1 (incoming), all other active types (sent=2, outbox=4, queued=6) are outgoing
                     val direction = if (type == Telephony.Sms.MESSAGE_TYPE_INBOX) "incoming" else "outgoing"
 
+                    val contactName = contactCache.getOrPut(address) {
+                        resolveContactName(address)
+                    }
+
                     entries += SmsLogEntry(
                         direction = direction,
                         counterparty = address,
                         messageAtEpochMs = date,
                         body = body,
-                        externalId = externalId
+                        externalId = externalId,
+                        contactName = contactName
                     )
                 }
             }
         // Deduplicate in case provider query returned multi-part SMS or outbox/sent duplicates
         return entries.distinctBy { "${it.direction}_${it.counterparty}_${it.messageAtEpochMs}" }
+    }
+
+    private fun resolveContactName(number: String): String? {
+        if (number.isBlank() || number == "Unknown" || number == "unknown" || number == "-1" || number == "-2") return null
+        try {
+            val uri = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(number)
+            )
+            context.contentResolver.query(
+                uri,
+                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                    if (idx >= 0) {
+                        val name = c.getString(idx)
+                        if (!name.isNullOrBlank()) return name.trim()
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Contacts lookup fallback
+        }
+        return null
     }
 
     private fun getAddressFromThread(threadId: Long): String? {

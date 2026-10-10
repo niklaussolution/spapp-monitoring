@@ -300,12 +300,12 @@ router.get("/:id/sms-log", requireAuth, async (req, res, next) => {
     if (ownsDevice.rows.length === 0) return res.status(404).json({ error: "Device not found" });
 
     const result = await pool.query(
-      `SELECT id, direction, counterparty, message_at, body
+      `SELECT id, direction, counterparty, message_at, body, contact_name
        FROM (
-         SELECT DISTINCT ON (direction, counterparty, message_at) id, direction, counterparty, message_at, body
+         SELECT DISTINCT ON (direction, counterparty, message_at) id, direction, counterparty, message_at, body, contact_name
          FROM sms_logs
          WHERE device_id = $1
-         ORDER BY direction, counterparty, message_at, (body IS NOT NULL) DESC, id DESC
+         ORDER BY direction, counterparty, message_at, (contact_name IS NOT NULL) DESC, (body IS NOT NULL) DESC, id DESC
        ) sub
        ORDER BY message_at DESC
        LIMIT 100`,

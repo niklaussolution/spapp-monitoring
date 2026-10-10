@@ -187,7 +187,8 @@ object RealtimeLogObserverManager {
                                     direction = it.direction,
                                     counterparty = it.counterparty,
                                     messageAt = Instant.ofEpochMilli(it.messageAtEpochMs).toString(),
-                                    body = it.body
+                                    body = it.body,
+                                    contactName = it.contactName
                                 )
                             }
                             val response = ApiClient.service.syncSmsLog(bearer, SmsLogSyncRequest(dtos))

@@ -15,5 +15,6 @@ data class SmsLogEntry(
     val messageAtEpochMs: Long,
     val body: String? = null,
     val synced: Boolean = false,
-    val externalId: Long = 0
+    val externalId: Long = 0,
+    val contactName: String? = null
 )

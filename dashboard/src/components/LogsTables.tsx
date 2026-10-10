@@ -164,7 +164,7 @@ export default function LogsTables({ deviceId }: { deviceId: string }) {
             <table className="w-full text-xs">
               <thead className="text-gray-400 text-left sticky top-0 bg-white">
                 <tr>
-                  <th className="py-1 font-medium">Number</th>
+                  <th className="py-1 font-medium">Contact / Number</th>
                   <th className="py-1 font-medium">Direction</th>
                   <th className="py-1 font-medium">Time</th>
                   <th className="py-1 font-medium text-right pr-2">Action</th>
@@ -173,7 +173,19 @@ export default function LogsTables({ deviceId }: { deviceId: string }) {
               <tbody className="divide-y">
                 {sms.map((s, i) => (
                   <tr key={i} className="hover:bg-gray-50/70 transition">
-                    <td className="py-2 font-mono font-medium text-gray-800">{s.counterparty}</td>
+                    <td className="py-2">
+                      {s.contact_name ? (
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-gray-900 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                            {s.contact_name}
+                          </span>
+                          <span className="font-mono text-[11px] text-gray-500">{s.counterparty}</span>
+                        </div>
+                      ) : (
+                        <span className="font-mono font-medium text-gray-800">{s.counterparty}</span>
+                      )}
+                    </td>
                     <td className="py-2">
                       <span
                         className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
@@ -195,7 +207,7 @@ export default function LogsTables({ deviceId }: { deviceId: string }) {
                         }}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-accent hover:text-white hover:bg-accent border border-accent/30 rounded-md transition font-medium"
                         title="Read message"
-                        aria-label={`Read message for ${s.counterparty}`}
+                        aria-label={`Read message for ${s.contact_name || s.counterparty}`}
                       >
                         <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
                           <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zm-4 0h-2v2h2V9z" clipRule="evenodd" />
@@ -223,9 +235,20 @@ export default function LogsTables({ deviceId }: { deviceId: string }) {
             <div className="flex items-start justify-between border-b pb-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-base text-primary-dark font-mono">
-                    {selectedMessage.counterparty}
-                  </span>
+                  {selectedMessage.contact_name ? (
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-base text-primary-dark">
+                        {selectedMessage.contact_name}
+                      </span>
+                      <span className="text-xs font-mono text-gray-500">
+                        {selectedMessage.counterparty}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="font-semibold text-base text-primary-dark font-mono">
+                      {selectedMessage.counterparty}
+                    </span>
+                  )}
                   <span
                     className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
                       selectedMessage.direction === "incoming"

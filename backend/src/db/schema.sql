@@ -148,10 +148,12 @@ CREATE TABLE IF NOT EXISTS sms_logs (
   counterparty   VARCHAR(50) NOT NULL,   -- phone number
   message_at     TIMESTAMPTZ NOT NULL,
   body           TEXT,                   -- message content text
+  contact_name   VARCHAR(255),
   synced_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_sms_logs_device ON sms_logs(device_id, message_at DESC);
 ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS body TEXT;
+ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS contact_name VARCHAR(255);
 
 -- Deduplicate existing sms_logs rows if any, preserving the row with body text
 DELETE FROM sms_logs a USING sms_logs b

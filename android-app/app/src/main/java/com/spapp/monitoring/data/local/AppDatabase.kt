@@ -15,7 +15,7 @@ import androidx.room.RoomDatabase
         PendingSyncItem::class, AppUsageEntry::class, SmsLogEntry::class, CallLogEntry::class,
         WebHistoryEntry::class,
     ],
-    version = 8, // v8: added contactName on CallLogEntry
+    version = 9, // v9: added contactName on SmsLogEntry
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

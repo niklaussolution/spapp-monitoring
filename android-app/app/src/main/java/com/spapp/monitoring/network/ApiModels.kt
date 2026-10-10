@@ -47,7 +47,8 @@ data class SmsLogEntryDto(
     val direction: String,
     val counterparty: String,
     val messageAt: String, // ISO-8601
-    val body: String? = null
+    val body: String? = null,
+    val contactName: String? = null
 )
 data class SmsLogSyncRequest(val entries: List<SmsLogEntryDto>)
 

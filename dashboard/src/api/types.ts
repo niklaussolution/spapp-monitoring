@@ -100,6 +100,7 @@ export interface SmsLogEntry {
   counterparty: string;
   message_at: string;
   body?: string | null;
+  contact_name?: string | null;
 }
 
 export interface WebHistoryEntry {
