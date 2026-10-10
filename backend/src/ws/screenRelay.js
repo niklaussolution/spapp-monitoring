@@ -63,6 +63,11 @@ function attachScreenRelay(httpServer) {
       streams.set(deviceId, stream);
     }
 
+    // Disable Nagle's algorithm for instant low-latency frame dispatch
+    try {
+      ws._socket?.setNoDelay(true);
+    } catch {}
+
     if (role === "admin") {
       stream.adminWsSet.add(ws);
       console.log(`[screenRelay] Admin connected for device ${deviceId} (active viewers: ${stream.adminWsSet.size})`);
@@ -120,11 +125,11 @@ function attachScreenRelay(httpServer) {
       }
 
       ws.on("message", (data, isBinary) => {
-        // Broadcast binary frame/audio to all connected admins watching this device
+        // Broadcast binary frame to all connected admins watching this device
         for (const admin of stream.adminWsSet) {
           if (admin.readyState === WebSocket.OPEN) {
-            // Buffer bloat prevention: drop stale frames if admin client socket is backed up
-            if (isBinary && admin.bufferedAmount > 32 * 1024) {
+            // Buffer bloat prevention: drop stale frames if admin client socket has ANY buffered bytes
+            if (isBinary && admin.bufferedAmount > 0) {
               continue;
             }
             admin.send(data, { binary: isBinary });

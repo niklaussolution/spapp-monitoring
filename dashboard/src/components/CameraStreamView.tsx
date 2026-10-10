@@ -31,7 +31,7 @@ export default function CameraStreamView({
   const [lens, setLens] = useState<"front" | "back">(initialLens);
   const [status, setStatus] = useState<StreamStatus>("initializing");
   const [statusMessage, setStatusMessage] = useState<string>("Initializing camera stream...");
-  const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const [hasFirstFrame, setHasFirstFrame] = useState<boolean>(false);
   const [fps, setFps] = useState<number>(0);
   const [frameCount, setFrameCount] = useState<number>(0);
   const [streamDuration, setStreamDuration] = useState<number>(0);
@@ -40,7 +40,10 @@ export default function CameraStreamView({
   const [isMuted, setIsMuted] = useState<boolean>(false);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const currentUrlRef = useRef<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const hasFirstFrameRef = useRef<boolean>(false);
+  const frameCountRef = useRef<number>(0);
   const frameTimestampsRef = useRef<number[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isMountedRef = useRef<boolean>(true);
@@ -73,6 +76,7 @@ export default function CameraStreamView({
       const now = Date.now();
       frameTimestampsRef.current = frameTimestampsRef.current.filter((t) => now - t <= 1000);
       setFps(frameTimestampsRef.current.length);
+      setFrameCount(frameCountRef.current);
     }, 500);
 
     return () => clearInterval(fpsInterval);
@@ -253,19 +257,34 @@ export default function CameraStreamView({
         if (bytes[0] === 0x01 || (bytes[0] === 0xff && bytes[1] === 0xd8)) {
           const jpegBytes = bytes[0] === 0x01 ? bytes.subarray(1) : bytes;
           const blob = new Blob([jpegBytes], { type: "image/jpeg" });
-          const newUrl = URL.createObjectURL(blob);
 
-          if (currentUrlRef.current) {
-            URL.revokeObjectURL(currentUrlRef.current);
-          }
-          currentUrlRef.current = newUrl;
-          setFrameUrl(newUrl);
+          createImageBitmap(blob)
+            .then((bitmap) => {
+              const canvas = canvasRef.current;
+              if (canvas && isMountedRef.current) {
+                if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+                  canvas.width = bitmap.width;
+                  canvas.height = bitmap.height;
+                  ctxRef.current = null;
+                }
+                const ctx = ctxRef.current || canvas.getContext("2d", { alpha: false, desynchronized: true });
+                if (ctx) {
+                  ctxRef.current = ctx;
+                  ctx.drawImage(bitmap, 0, 0);
+                }
+                if (!hasFirstFrameRef.current) {
+                  hasFirstFrameRef.current = true;
+                  setHasFirstFrame(true);
+                  setStatus("streaming");
+                  setStatusMessage(`Live ${lens} camera active`);
+                }
+              }
+              bitmap.close();
+            })
+            .catch(() => {});
 
+          frameCountRef.current += 1;
           frameTimestampsRef.current.push(Date.now());
-          setFrameCount((prev) => prev + 1);
-
-          setStatus("streaming");
-          setStatusMessage(`Live ${lens} camera active`);
         } else if (bytes[0] === 0x02) {
           setHasAudioStream(true);
           playPcmAudio(bytes.subarray(1));
@@ -329,14 +348,20 @@ export default function CameraStreamView({
   };
 
   const handleSnapshot = () => {
-    if (!frameUrl) return;
-    const a = document.createElement("a");
-    a.href = frameUrl;
-    const dateStr = new Date().toISOString().replace(/[:.]/g, "-");
-    a.download = `spapp-camera-${lens}-${deviceName || deviceId}-${dateStr}.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const canvas = canvasRef.current;
+    if (!canvas || !hasFirstFrame) return;
+    try {
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      const dateStr = new Date().toISOString().replace(/[:.]/g, "-");
+      a.download = `spapp-camera-${lens}-${deviceName || deviceId}-${dateStr}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      console.warn("Snapshot failed", e);
+    }
   };
 
   const toggleFullscreen = () => {
@@ -373,9 +398,6 @@ export default function CameraStreamView({
     return () => {
       isMountedRef.current = false;
       stopStream(true);
-      if (currentUrlRef.current) {
-        URL.revokeObjectURL(currentUrlRef.current);
-      }
       if (audioCtxRef.current) {
         audioCtxRef.current.close().catch(() => {});
       }
@@ -473,7 +495,7 @@ export default function CameraStreamView({
 
           <button
             onClick={handleSnapshot}
-            disabled={!frameUrl}
+            disabled={!hasFirstFrame}
             className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition disabled:opacity-40"
             title="Take snapshot"
           >
@@ -528,16 +550,17 @@ export default function CameraStreamView({
 
       {/* Main View Area */}
       <div className="relative flex-1 flex items-center justify-center bg-black overflow-hidden min-h-[360px]">
-        {frameUrl ? (
-          <img
-            src={frameUrl}
-            alt="Live Camera Feed"
-            className="max-h-full max-w-full object-contain pointer-events-none select-none"
-            style={{
-              transform: lens === "front" ? "scaleX(-1)" : "none", // mirror front camera feed like a selfie preview
-            }}
-          />
-        ) : (
+        <canvas
+          ref={canvasRef}
+          className={`max-h-full max-w-full object-contain pointer-events-none select-none transition-opacity duration-200 ${
+            hasFirstFrame ? "opacity-100" : "hidden opacity-0"
+          }`}
+          style={{
+            transform: lens === "front" ? "scaleX(-1)" : "none", // mirror front camera feed like a selfie preview
+          }}
+        />
+
+        {!hasFirstFrame && (
           <div className="flex flex-col items-center justify-center p-6 text-center text-slate-400 max-w-xs">
             {status === "error" ? (
               <div className="w-12 h-12 rounded-full bg-red-950/60 border border-red-800 flex items-center justify-center mb-3 text-red-400">

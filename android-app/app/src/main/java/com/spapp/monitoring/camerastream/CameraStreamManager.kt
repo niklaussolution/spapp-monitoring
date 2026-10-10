@@ -4,16 +4,15 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
-import android.media.AudioFormat
-import android.media.AudioRecord
 import android.media.ImageReader
-import android.media.MediaRecorder
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.PowerManager
@@ -34,6 +33,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -53,12 +53,14 @@ object CameraStreamManager {
 
     private const val TAG = "CameraStreamManager"
 
-    // Packet type indicators
+    // Packet type indicator
     private const val PACKET_TYPE_VIDEO: Byte = 0x01
-    private const val PACKET_TYPE_AUDIO: Byte = 0x02
+
+    private const val MIN_FRAME_INTERVAL_MS = 50L // ~20 FPS: real-time smooth live motion
+    private const val JPEG_COMPRESSION_QUALITY = 40.toByte() // Fast hardware compression (~10-15KB/frame)
+    private var lastSentFrameTimestamp = 0L
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var audioJob: Job? = null
     private var activeWebSocket: WebSocket? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val isStreaming = AtomicBoolean(false)
@@ -138,8 +140,7 @@ object CameraStreamManager {
         activeWebSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "Camera stream WebSocket connected for lens: $currentLens")
-                openCamera(context, currentLens, webSocket)
-                startAudioLoop(context, webSocket)
+                openCamera(context, currentLens)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -186,7 +187,7 @@ object CameraStreamManager {
 
         cameraHandler?.post {
             closeCameraDevice()
-            openCamera(context, normalized, ws)
+            openCamera(context, normalized)
             try {
                 val confirmJson = JSONObject().apply {
                     put("type", "lens_switched")
@@ -213,9 +214,6 @@ object CameraStreamManager {
         }
 
         Log.d(TAG, "Stopping camera stream")
-
-        audioJob?.cancel()
-        audioJob = null
 
         val ws = activeWebSocket
         activeWebSocket = null
@@ -255,7 +253,7 @@ object CameraStreamManager {
     }
 
     @SuppressLint("MissingPermission")
-    private fun openCamera(context: Context, lens: String, ws: WebSocket) {
+    private fun openCamera(context: Context, lens: String) {
         val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return
         val targetFacing = if (lens == "front") {
             CameraCharacteristics.LENS_FACING_FRONT
@@ -276,11 +274,13 @@ object CameraStreamManager {
                     val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
                     val jpegSizes = map?.getOutputSizes(ImageFormat.JPEG)
                     if (!jpegSizes.isNullOrEmpty()) {
-                        // Pick optimal preview size close to 640x480
+                        // Pick lightweight preview size close to 480x360 or 640x480 for ultra-fast encoding & low bandwidth
                         selectedSize = jpegSizes
-                            .filter { it.width in 400..960 && it.height in 300..720 }
-                            .minByOrNull { Math.abs(it.width * it.height - 640 * 480) }
-                            ?: jpegSizes.first()
+                            .filter { it.width in 320..640 && it.height in 240..480 }
+                            .minByOrNull { Math.abs(it.width * it.height - 480 * 360) }
+                            ?: jpegSizes.filter { it.width <= 640 }.maxByOrNull { it.width }
+                            ?: jpegSizes.minByOrNull { it.width * it.height }
+                            ?: Size(640, 480)
                     }
                     break
                 }
@@ -298,21 +298,55 @@ object CameraStreamManager {
 
             Log.d(TAG, "Opening camera $selectedCameraId ($lens) with size: ${selectedSize.width}x${selectedSize.height}")
 
-            imageReader = ImageReader.newInstance(selectedSize.width, selectedSize.height, ImageFormat.JPEG, 2).apply {
+            imageReader = ImageReader.newInstance(selectedSize.width, selectedSize.height, ImageFormat.JPEG, 3).apply {
                 setOnImageAvailableListener({ reader ->
+                    val now = android.os.SystemClock.uptimeMillis()
                     val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
                     try {
+                        // Frame pacing: enforce ~20 FPS (50ms)
+                        if (now - lastSentFrameTimestamp < MIN_FRAME_INTERVAL_MS) {
+                            return@setOnImageAvailableListener
+                        }
+
+                        // Strict backpressure: if socket has ANY queued bytes in flight, drop frame immediately
+                        val currentWs = activeWebSocket
+                        if (currentWs == null || currentWs.queueSize() > 0) {
+                            return@setOnImageAvailableListener
+                        }
+
                         val planes = image.planes
                         if (planes.isNotEmpty()) {
                             val buffer = planes[0].buffer
-                            val bytes = ByteArray(buffer.remaining())
-                            buffer.get(bytes)
+                            val rawBytes = ByteArray(buffer.remaining())
+                            buffer.get(rawBytes)
 
-                            if (isStreaming.get() && ws.queueSize() <= 48 * 1024) {
-                                val packet = ByteArray(1 + bytes.size)
+                            if (isStreaming.get() && currentWs.queueSize() == 0L) {
+                                val finalBytes = if (rawBytes.size > 40 * 1024) {
+                                    // High-resolution safeguard: if device outputted large 1080p/720p frame,
+                                    // downsample to lightweight ~480p (~12KB)
+                                    try {
+                                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                                        val bmp = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, opts)
+                                        if (bmp != null) {
+                                            val out = ByteArrayOutputStream()
+                                            bmp.compress(Bitmap.CompressFormat.JPEG, 35, out)
+                                            bmp.recycle()
+                                            out.toByteArray()
+                                        } else {
+                                            rawBytes
+                                        }
+                                    } catch (_: Exception) {
+                                        rawBytes
+                                    }
+                                } else {
+                                    rawBytes
+                                }
+
+                                lastSentFrameTimestamp = now
+                                val packet = ByteArray(1 + finalBytes.size)
                                 packet[0] = PACKET_TYPE_VIDEO
-                                System.arraycopy(bytes, 0, packet, 1, bytes.size)
-                                ws.send(packet.toByteString())
+                                System.arraycopy(finalBytes, 0, packet, 1, finalBytes.size)
+                                currentWs.send(packet.toByteString())
                             }
                         }
                     } catch (e: Exception) {
@@ -354,6 +388,13 @@ object CameraStreamManager {
                 addTarget(readerSurface)
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                 set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                set(CaptureRequest.JPEG_QUALITY, JPEG_COMPRESSION_QUALITY)
+                set(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_VIDEO_RECORD)
+                set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_FAST)
+                set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_FAST)
+                set(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_FAST)
+                set(CaptureRequest.SHADING_MODE, CaptureRequest.SHADING_MODE_FAST)
+                set(CaptureRequest.HOT_PIXEL_MODE, CaptureRequest.HOT_PIXEL_MODE_FAST)
             }
 
             camera.createCaptureSession(
@@ -397,74 +438,5 @@ object CameraStreamManager {
             imageReader?.close()
         } catch (_: Exception) {}
         imageReader = null
-    }
-
-    private fun startAudioLoop(context: Context, ws: WebSocket) {
-        audioJob?.cancel()
-
-        val hasPermission = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (!hasPermission) {
-            Log.d(TAG, "RECORD_AUDIO permission not granted; streaming silent camera video only")
-            return
-        }
-
-        audioJob = scope.launch(Dispatchers.IO) {
-            var recorder: AudioRecord? = null
-            try {
-                val sampleRate = 16000
-                val channelConfig = AudioFormat.CHANNEL_IN_MONO
-                val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-                val minBufSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-                val bufferSizeInBytes = maxOf(minBufSize, 3200)
-
-                recorder = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    sampleRate,
-                    channelConfig,
-                    audioFormat,
-                    bufferSizeInBytes
-                )
-
-                if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-                    Log.w(TAG, "AudioRecord failed to initialize")
-                    return@launch
-                }
-
-                recorder.startRecording()
-                Log.d(TAG, "Camera ambient audio streaming started (16kHz PCM)")
-
-                val chunkSize = 1600
-                val pcmBuffer = ShortArray(chunkSize)
-                val bytePayload = ByteArray(1 + chunkSize * 2)
-                bytePayload[0] = PACKET_TYPE_AUDIO
-
-                while (isActive && isStreaming.get()) {
-                    val readShorts = recorder.read(pcmBuffer, 0, chunkSize)
-                    if (readShorts > 0 && isStreaming.get()) {
-                        if (ws.queueSize() > 64 * 1024) continue
-
-                        var idx = 1
-                        for (i in 0 until readShorts) {
-                            val sample = pcmBuffer[i].toInt()
-                            bytePayload[idx++] = (sample and 0xFF).toByte()
-                            bytePayload[idx++] = ((sample shr 8) and 0xFF).toByte()
-                        }
-                        ws.send(bytePayload.toByteString(0, idx))
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Camera audio stream error", e)
-            } finally {
-                try {
-                    recorder?.stop()
-                    recorder?.release()
-                } catch (_: Exception) {}
-                Log.d(TAG, "Camera audio stream stopped")
-            }
-        }
     }
 }

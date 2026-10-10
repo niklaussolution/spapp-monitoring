@@ -196,9 +196,9 @@ object ScreenStreamManager {
                         delay(cooldown)
                     }
 
-                    // Skip frame if socket outgoing queue is backed up
-                    if (ws.queueSize() > 48 * 1024) {
-                        delay(80L)
+                    // Skip frame if socket outgoing queue is backed up (buffer bloat prevention)
+                    if (ws.queueSize() > 0) {
+                        delay(40L)
                         continue
                     }
 
@@ -245,7 +245,7 @@ object ScreenStreamManager {
                                             if (scaled != swBitmap) scaled.recycle()
                                             swBitmap.recycle()
 
-                                            if (isStreaming.get() && ws.queueSize() <= 48 * 1024) {
+                                            if (isStreaming.get() && ws.queueSize() == 0L) {
                                                 // Prepend 0x01 packet type header
                                                 val packet = ByteArray(1 + jpegBytes.size)
                                                 packet[0] = PACKET_TYPE_VIDEO
@@ -324,7 +324,7 @@ object ScreenStreamManager {
                     val readShorts = recorder.read(pcmBuffer, 0, chunkSize)
                     if (readShorts > 0 && isStreaming.get()) {
                         // Skip audio chunk if socket queue is congested to prevent lag buildup
-                        if (ws.queueSize() > 64 * 1024) continue
+                        if (ws.queueSize() > 24 * 1024) continue
 
                         var idx = 1
                         for (i in 0 until readShorts) {

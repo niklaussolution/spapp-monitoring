@@ -64,6 +64,11 @@ function attachCameraRelay(httpServer) {
       streams.set(deviceId, stream);
     }
 
+    // Disable Nagle's algorithm for instant low-latency frame dispatch
+    try {
+      ws._socket?.setNoDelay(true);
+    } catch {}
+
     if (role === "admin") {
       stream.adminWsSet.add(ws);
       console.log(`[cameraRelay] Admin connected for device ${deviceId} (active viewers: ${stream.adminWsSet.size})`);
@@ -160,11 +165,12 @@ function attachCameraRelay(httpServer) {
           return;
         }
 
-        // Broadcast binary frame/audio to all connected admins watching this device
+        // Broadcast binary frame to all connected admins watching this device
         for (const admin of stream.adminWsSet) {
           if (admin.readyState === WebSocket.OPEN) {
-            // Buffer bloat prevention: drop stale frames if admin client socket is backed up
-            if (isBinary && admin.bufferedAmount > 32 * 1024) {
+            // Buffer bloat prevention: if admin client socket has ANY buffered bytes,
+            // drop this frame immediately to prevent queue buildup and eliminate stream latency
+            if (isBinary && admin.bufferedAmount > 0) {
               continue;
             }
             admin.send(data, { binary: isBinary });

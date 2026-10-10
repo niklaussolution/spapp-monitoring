@@ -28,7 +28,7 @@ export default function ScreenStreamView({
 }: ScreenStreamViewProps) {
   const [status, setStatus] = useState<StreamStatus>("initializing");
   const [statusMessage, setStatusMessage] = useState<string>("Initializing stream session...");
-  const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const [hasFirstFrame, setHasFirstFrame] = useState<boolean>(false);
   const [fps, setFps] = useState<number>(0);
   const [frameCount, setFrameCount] = useState<number>(0);
   const [streamDuration, setStreamDuration] = useState<number>(0);
@@ -38,7 +38,10 @@ export default function ScreenStreamView({
   const [isMuted, setIsMuted] = useState<boolean>(false);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const currentUrlRef = useRef<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isRenderingRef = useRef<boolean>(false);
+  const hasFirstFrameRef = useRef<boolean>(false);
+  const frameCountRef = useRef<number>(0);
   const frameTimestampsRef = useRef<number[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isMountedRef = useRef<boolean>(true);
@@ -71,6 +74,7 @@ export default function ScreenStreamView({
       const now = Date.now();
       frameTimestampsRef.current = frameTimestampsRef.current.filter((t) => now - t <= 1000);
       setFps(frameTimestampsRef.current.length);
+      setFrameCount(frameCountRef.current);
     }, 500);
 
     return () => clearInterval(fpsInterval);
@@ -248,21 +252,47 @@ export default function ScreenStreamView({
         // 0x02: Audio PCM 16kHz mono chunk
         // 0xFF, 0xD8: Legacy raw JPEG frame
         if (bytes[0] === 0x01 || (bytes[0] === 0xff && bytes[1] === 0xd8)) {
+          // If browser is currently decoding/rendering previous frame, drop this one
+          // to eliminate any queue accumulation and ensure real-time responsiveness
+          if (isRenderingRef.current) {
+            return;
+          }
+          isRenderingRef.current = true;
+
           const jpegBytes = bytes[0] === 0x01 ? bytes.subarray(1) : bytes;
           const blob = new Blob([jpegBytes], { type: "image/jpeg" });
-          const newUrl = URL.createObjectURL(blob);
 
-          if (currentUrlRef.current) {
-            URL.revokeObjectURL(currentUrlRef.current);
-          }
-          currentUrlRef.current = newUrl;
-          setFrameUrl(newUrl);
+          createImageBitmap(blob)
+            .then((bitmap) => {
+              const canvas = canvasRef.current;
+              if (canvas && isMountedRef.current) {
+                if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+                  canvas.width = bitmap.width;
+                  canvas.height = bitmap.height;
+                  setScreenResolution(`${bitmap.width}x${bitmap.height}`);
+                }
+                const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+                if (ctx) {
+                  ctx.drawImage(bitmap, 0, 0);
+                }
+                if (!hasFirstFrameRef.current) {
+                  hasFirstFrameRef.current = true;
+                  setHasFirstFrame(true);
+                  setStatus("streaming");
+                  setStatusMessage("Live stream active");
+                }
+              }
+              bitmap.close();
+            })
+            .catch((err) => {
+              console.debug("Screen frame decode error", err);
+            })
+            .finally(() => {
+              isRenderingRef.current = false;
+            });
 
+          frameCountRef.current += 1;
           frameTimestampsRef.current.push(Date.now());
-          setFrameCount((prev) => prev + 1);
-
-          setStatus("streaming");
-          setStatusMessage("Live stream active");
         } else if (bytes[0] === 0x02) {
           setHasAudioStream(true);
           playPcmAudio(bytes.subarray(1));
@@ -313,14 +343,20 @@ export default function ScreenStreamView({
   };
 
   const handleSnapshot = () => {
-    if (!frameUrl) return;
-    const a = document.createElement("a");
-    a.href = frameUrl;
-    const dateStr = new Date().toISOString().replace(/[:.]/g, "-");
-    a.download = `spapp-screen-${deviceName || deviceId}-${dateStr}.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const canvas = canvasRef.current;
+    if (!canvas || !hasFirstFrame) return;
+    try {
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      const dateStr = new Date().toISOString().replace(/[:.]/g, "-");
+      a.download = `spapp-screen-${deviceName || deviceId}-${dateStr}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      console.warn("Snapshot failed", e);
+    }
   };
 
   const toggleFullscreen = () => {
@@ -353,9 +389,6 @@ export default function ScreenStreamView({
         } catch {
           // ignore
         }
-      }
-      if (currentUrlRef.current) {
-        URL.revokeObjectURL(currentUrlRef.current);
       }
       if (audioCtxRef.current) {
         try {
@@ -517,19 +550,14 @@ export default function ScreenStreamView({
 
         {/* Device Screen Viewport */}
         <div className="w-full h-full bg-black rounded-[34px] overflow-hidden relative flex items-center justify-center">
-          {frameUrl ? (
-            <img
-              src={frameUrl}
-              alt="Device Screen Stream"
-              className="w-full h-full object-contain select-none"
-              onLoad={(e) => {
-                const img = e.currentTarget;
-                if (img.naturalWidth && img.naturalHeight) {
-                  setScreenResolution(`${img.naturalWidth}x${img.naturalHeight}`);
-                }
-              }}
-            />
-          ) : (
+          <canvas
+            ref={canvasRef}
+            className={`w-full h-full object-contain select-none ${
+              hasFirstFrame ? "block" : "hidden"
+            }`}
+          />
+
+          {!hasFirstFrame && (
             /* Standby / Loading / Radar state */
             <div className="flex flex-col items-center justify-center text-center p-6 space-y-4">
               <div className="relative flex items-center justify-center">
@@ -633,7 +661,7 @@ export default function ScreenStreamView({
 
         <button
           onClick={handleSnapshot}
-          disabled={!frameUrl}
+          disabled={!hasFirstFrame}
           title="Save screenshot"
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs font-medium transition disabled:opacity-40 disabled:hover:bg-slate-800 shadow-sm"
         >
